@@ -38,7 +38,7 @@ description: Workspace scripts, local ports, watcher behavior, tests, and docs d
 | --- | --- |
 | Vite client | prefers `4141`, with automatic fallback through `4144` |
 | API server | `4140` |
-| VitePress docs | `4145` |
+| VitePress docs | prefers `4145`, with automatic fallback to the next free port |
 
 ## Dev proxy behavior
 

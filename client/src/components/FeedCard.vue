@@ -56,7 +56,7 @@
       @click="handleHomeImageClick"
     >
       <ResilientImage
-        :src="item.thumbnailUrl"
+        :src="homeImageSrc"
         :alt="item.filename"
         loading="lazy"
         :retry-while="appStore.isScanning"
@@ -345,6 +345,7 @@ const formattedDate = computed(() =>
 );
 const formattedDuration = computed(() => formatMediaDuration(props.item.durationMs));
 const mediaAspectRatio = computed(() => resolveFeedAspectRatio(props.item.width, props.item.height));
+const homeImageSrc = computed(() => (props.item.isAnimated ? props.item.previewUrl : props.item.thumbnailUrl));
 const deleteDialogMessage = computed(() =>
   deleteOriginalFromDisk.value
     ? 'This will permanently delete the post from the app and remove original media from disk.'

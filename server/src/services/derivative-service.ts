@@ -53,6 +53,7 @@ export interface MediaMetadata {
   durationMs: number | null;
   mediaType: MediaType;
   playbackStrategy: PlaybackStrategy;
+  isAnimated: boolean;
 }
 
 export interface DerivativeResult extends MediaMetadata {
@@ -133,7 +134,8 @@ async function readImageMetadata(sourcePath: string): Promise<MediaMetadata> {
     takenAt,
     durationMs: null,
     mediaType: 'image',
-    playbackStrategy: 'preview'
+    playbackStrategy: 'preview',
+    isAnimated: (metadata.pages ?? 1) > 1
   };
 }
 
@@ -188,7 +190,8 @@ async function readVideoMetadata(sourcePath: string, options: ReadMediaMetadataO
     takenAt,
     durationMs,
     mediaType: 'video',
-    playbackStrategy: await resolveVideoPlaybackStrategy(sourcePath, payload, playbackWidth, options.fileSize)
+    playbackStrategy: await resolveVideoPlaybackStrategy(sourcePath, payload, playbackWidth, options.fileSize),
+    isAnimated: false
   };
 }
 
@@ -214,7 +217,7 @@ async function writeImageThumbnail(sourcePath: string, thumbnailAbsolutePath: st
 
 async function writeImagePreview(sourcePath: string, previewAbsolutePath: string): Promise<void> {
   await ensureParentDirectory(previewAbsolutePath);
-  await sharp(sourcePath, { animated: false })
+  await sharp(sourcePath, { animated: true })
     .rotate()
     .resize({
       width: PREVIEW_MAX_WIDTH,

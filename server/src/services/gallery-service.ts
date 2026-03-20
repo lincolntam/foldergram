@@ -152,6 +152,7 @@ function mapFeedImage(image: IndexedFeedImage, thumbnailVersion = getThumbnailAs
   const { playbackStrategy, ...rest } = image;
   return {
     ...rest,
+    isAnimated: Boolean(rest.isAnimated),
     folderBreadcrumb: getPathBreadcrumb(rest.folderPath),
     thumbnailUrl: toPublicMediaUrl('/thumbnails', rest.thumbnailUrl, thumbnailVersion),
     previewUrl: buildPreviewUrl({
@@ -167,6 +168,7 @@ function mapImageDetail(image: IndexedImageDetail, thumbnailVersion = getThumbna
   const { playbackStrategy, ...rest } = image;
   return {
     ...rest,
+    isAnimated: Boolean(rest.isAnimated),
     folderBreadcrumb: getPathBreadcrumb(rest.folderPath),
     thumbnailUrl: toPublicMediaUrl('/thumbnails', rest.thumbnailUrl, thumbnailVersion),
     previewUrl: buildPreviewUrl({
@@ -183,6 +185,7 @@ function mapTrashImage(image: IndexedTrashImage, thumbnailVersion = getThumbnail
   const { playbackStrategy, ...rest } = image;
   return {
     ...rest,
+    isAnimated: Boolean(rest.isAnimated),
     folderBreadcrumb: getPathBreadcrumb(rest.folderPath),
     thumbnailUrl: toPublicMediaUrl('/thumbnails', rest.thumbnailUrl, thumbnailVersion),
     previewUrl: buildPreviewUrl({

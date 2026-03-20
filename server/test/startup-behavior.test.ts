@@ -70,7 +70,8 @@ describe.sequential('startup behavior', () => {
         takenAt: null,
         durationMs: mediaType === 'video' ? 12_000 : null,
         mediaType,
-        playbackStrategy: 'preview'
+        playbackStrategy: 'preview',
+        isAnimated: false
       };
     });
 
@@ -83,6 +84,7 @@ describe.sequential('startup behavior', () => {
         durationMs: mediaType === 'video' ? 12_000 : null,
         mediaType,
         playbackStrategy: 'preview',
+        isAnimated: false,
         thumbnailPath: getThumbnailRelativePath(relativePath),
         previewPath: getPreviewRelativePath(relativePath, mediaType),
         generatedThumbnail: true,

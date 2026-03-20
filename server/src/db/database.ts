@@ -55,6 +55,10 @@ class DatabaseManager {
       this.database.exec('ALTER TABLE images ADD COLUMN duration_ms REAL NULL');
     }
 
+    if (this.tableExists('images') && !this.tableHasColumn('images', 'is_animated')) {
+      this.database.exec('ALTER TABLE images ADD COLUMN is_animated INTEGER NULL');
+    }
+
     if (this.tableExists('images') && !this.tableHasColumn('images', 'taken_at')) {
       this.database.exec('ALTER TABLE images ADD COLUMN taken_at INTEGER NULL');
     }
@@ -69,6 +73,10 @@ class DatabaseManager {
 
     if (this.tableExists('images') && this.tableHasColumn('images', 'playback_strategy')) {
       this.database.exec("UPDATE images SET playback_strategy = 'preview' WHERE media_type != 'video' AND playback_strategy IS NULL");
+    }
+
+    if (this.tableExists('images') && this.tableHasColumn('images', 'is_animated')) {
+      this.database.exec("UPDATE images SET is_animated = 0 WHERE media_type = 'video' AND is_animated IS NULL");
     }
 
     if (this.tableExists('images') && !this.tableHasColumn('images', 'is_trashed')) {

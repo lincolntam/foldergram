@@ -68,7 +68,8 @@ describe.sequential('trash flow', () => {
         takenAt: null,
         durationMs: mediaType === 'video' ? 12_000 : null,
         mediaType,
-        playbackStrategy: 'preview'
+        playbackStrategy: 'preview',
+        isAnimated: false
       };
     });
 
@@ -93,6 +94,7 @@ describe.sequential('trash flow', () => {
         durationMs: mediaType === 'video' ? 12_000 : null,
         mediaType,
         playbackStrategy: 'preview',
+        isAnimated: false,
         thumbnailPath: thumbnailRelativePath,
         previewPath: previewRelativePath,
         generatedThumbnail: true,

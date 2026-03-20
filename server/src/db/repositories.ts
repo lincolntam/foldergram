@@ -32,6 +32,7 @@ const FEED_IMAGE_SELECT_SQL = `
     images.height,
     images.media_type AS mediaType,
     images.duration_ms AS durationMs,
+    images.is_animated AS isAnimated,
     images.thumbnail_path AS thumbnailUrl,
     images.preview_path AS previewUrl,
     images.playback_strategy AS playbackStrategy,
@@ -43,6 +44,10 @@ const FEED_IMAGE_SELECT_SQL = `
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function serializeAnimatedFlag(isAnimated: boolean | null | undefined): number {
+  return isAnimated ? 1 : 0;
 }
 
 export interface UpsertFolderInput {
@@ -68,6 +73,7 @@ export interface UpsertImageInput {
   mediaType: MediaType;
   mimeType: string;
   durationMs: number | null;
+  isAnimated?: boolean | null;
   fingerprint: string;
   mtimeMs: number;
   firstSeenAt: string;
@@ -91,6 +97,7 @@ export interface RefreshIndexedImageInput {
   mediaType: MediaType;
   mimeType: string;
   durationMs: number | null;
+  isAnimated?: boolean | null;
   fingerprint: string;
   mtimeMs: number;
   takenAt: number;
@@ -246,10 +253,10 @@ export const imageRepository = {
       `
       INSERT INTO images (
         folder_id, filename, extension, relative_path, absolute_path, file_size, width, height,
-        media_type, mime_type, duration_ms, checksum_or_fingerprint, mtime_ms, first_seen_at, sort_timestamp, taken_at, taken_at_source,
+        media_type, mime_type, duration_ms, is_animated, checksum_or_fingerprint, mtime_ms, first_seen_at, sort_timestamp, taken_at, taken_at_source,
         thumbnail_path, preview_path, playback_strategy, is_deleted, is_trashed, trashed_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?)
       ON CONFLICT(relative_path) DO UPDATE SET
         folder_id = excluded.folder_id,
         filename = excluded.filename,
@@ -261,6 +268,7 @@ export const imageRepository = {
         media_type = excluded.media_type,
         mime_type = excluded.mime_type,
         duration_ms = excluded.duration_ms,
+        is_animated = excluded.is_animated,
         checksum_or_fingerprint = excluded.checksum_or_fingerprint,
         mtime_ms = excluded.mtime_ms,
         taken_at = excluded.taken_at,
@@ -283,6 +291,7 @@ export const imageRepository = {
       input.mediaType,
       input.mimeType,
       input.durationMs,
+      serializeAnimatedFlag(input.isAnimated),
       input.fingerprint,
       input.mtimeMs,
       input.firstSeenAt,
@@ -313,6 +322,7 @@ export const imageRepository = {
         media_type = ?,
         mime_type = ?,
         duration_ms = ?,
+        is_animated = ?,
         checksum_or_fingerprint = ?,
         mtime_ms = ?,
         taken_at = ?,
@@ -335,6 +345,7 @@ export const imageRepository = {
       input.mediaType,
       input.mimeType,
       input.durationMs,
+      serializeAnimatedFlag(input.isAnimated),
       input.fingerprint,
       input.mtimeMs,
       input.takenAt,
@@ -577,6 +588,7 @@ export const imageRepository = {
         images.height,
         images.media_type AS mediaType,
         images.duration_ms AS durationMs,
+        images.is_animated AS isAnimated,
         images.thumbnail_path AS thumbnailUrl,
         images.preview_path AS previewUrl,
         images.playback_strategy AS playbackStrategy,
@@ -687,6 +699,7 @@ export const imageRepository = {
         images.height,
         images.media_type AS mediaType,
         images.duration_ms AS durationMs,
+        images.is_animated AS isAnimated,
         images.relative_path AS relativePath,
         images.mime_type AS mimeType,
         images.file_size AS fileSize,
@@ -798,6 +811,7 @@ export const likeRepository = {
         images.height,
         images.media_type AS mediaType,
         images.duration_ms AS durationMs,
+        images.is_animated AS isAnimated,
         images.thumbnail_path AS thumbnailUrl,
         images.preview_path AS previewUrl,
         images.playback_strategy AS playbackStrategy,
@@ -845,6 +859,7 @@ export const likeRepository = {
         images.height,
         images.media_type AS mediaType,
         images.duration_ms AS durationMs,
+        images.is_animated AS isAnimated,
         images.thumbnail_path AS thumbnailUrl,
         images.preview_path AS previewUrl,
         images.playback_strategy AS playbackStrategy,

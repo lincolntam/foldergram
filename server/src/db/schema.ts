@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS images (
   media_type TEXT NOT NULL DEFAULT 'image',
   mime_type TEXT NOT NULL,
   duration_ms REAL NULL,
+  is_animated INTEGER NULL,
   checksum_or_fingerprint TEXT NOT NULL,
   mtime_ms REAL NOT NULL,
   first_seen_at TEXT NOT NULL,

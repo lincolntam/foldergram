@@ -13,6 +13,7 @@ export interface FeedItem {
   height: number;
   mediaType: 'image' | 'video';
   durationMs: number | null;
+  isAnimated?: boolean | null;
   thumbnailUrl: string;
   previewUrl: string;
   sortTimestamp: number;

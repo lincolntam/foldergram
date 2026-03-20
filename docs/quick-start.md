@@ -105,7 +105,7 @@ This runs:
 
 - the Vite client on `http://localhost:4141`, with automatic fallback through `4144`
 - the Express server on `http://localhost:4140`
-- the VitePress docs site on `http://localhost:4145`
+- the VitePress docs site on `http://localhost:4145`, with automatic fallback to the next free port
 
 ## Useful commands
 

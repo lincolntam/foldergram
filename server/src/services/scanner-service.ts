@@ -1385,6 +1385,7 @@ class ScannerService {
     const needsTakenAtBackfill = existing?.taken_at === null || existing?.taken_at_source === null;
     const needsMediaBackfill = existing?.media_type !== mediaType || (mediaType === 'video' && existing?.duration_ms === null);
     const needsPlaybackStrategyBackfill = mediaType === 'video' && existing?.playback_strategy === null;
+    const needsAnimatedBackfill = mediaType === 'image' && existing?.is_animated === null;
 
     if (existing && existing.checksum_or_fingerprint === fingerprint) {
       const refreshedIndexedRow = shouldRefreshUnchangedImage({
@@ -1399,8 +1400,9 @@ class ScannerService {
       let metadataWidth = existing.width;
       let metadataHeight = existing.height;
       let metadataPlaybackStrategy = existing.playback_strategy ?? 'preview';
+      let metadataIsAnimated = existing.is_animated === 1;
 
-      if (needsTakenAtBackfill || needsMediaBackfill || needsPlaybackStrategyBackfill) {
+      if (needsTakenAtBackfill || needsMediaBackfill || needsPlaybackStrategyBackfill || needsAnimatedBackfill) {
         const metadata = await readMediaMetadata(file.absolutePath, mediaType, {
           fileSize: file.stats.size
         });
@@ -1409,9 +1411,10 @@ class ScannerService {
         metadataWidth = metadata.width;
         metadataHeight = metadata.height;
         metadataPlaybackStrategy = metadata.playbackStrategy;
+        metadataIsAnimated = metadata.isAnimated;
       }
 
-      if (refreshedIndexedRow || needsTakenAtBackfill || needsMediaBackfill || needsPlaybackStrategyBackfill) {
+      if (refreshedIndexedRow || needsTakenAtBackfill || needsMediaBackfill || needsPlaybackStrategyBackfill || needsAnimatedBackfill) {
         const resolvedTakenAt = resolveTakenAt({
           exifTakenAt: metadataTakenAt,
           existingTakenAt: existing.taken_at,
@@ -1436,6 +1439,7 @@ class ScannerService {
           mediaType,
           mimeType: getMimeTypeFromExtension(extension),
           durationMs: metadataDurationMs,
+          isAnimated: metadataIsAnimated,
           fingerprint,
           mtimeMs: file.stats.mtimeMs,
           takenAt: resolvedTakenAt.takenAt,
@@ -1498,6 +1502,7 @@ class ScannerService {
       mediaType,
       mimeType: getMimeTypeFromExtension(extension),
       durationMs: metadata.durationMs,
+      isAnimated: metadata.isAnimated,
       fingerprint,
       mtimeMs: file.stats.mtimeMs,
       firstSeenAt,

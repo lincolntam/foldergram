@@ -68,7 +68,8 @@ describe.sequential('library rebuild reuses existing derivatives', () => {
         takenAt: null,
         durationMs: mediaType === 'video' ? 12_000 : null,
         mediaType,
-        playbackStrategy: 'preview'
+        playbackStrategy: 'preview',
+        isAnimated: false
       };
     });
 
@@ -98,6 +99,7 @@ describe.sequential('library rebuild reuses existing derivatives', () => {
         durationMs: mediaType === 'video' ? 12_000 : null,
         mediaType,
         playbackStrategy: 'preview',
+        isAnimated: false,
         thumbnailPath,
         previewPath,
         generatedThumbnail: shouldWriteThumbnail,

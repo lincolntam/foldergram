@@ -31,6 +31,7 @@ export interface ImageRecord {
   media_type: MediaType;
   mime_type: string;
   duration_ms: number | null;
+  is_animated: number | null;
   checksum_or_fingerprint: string;
   mtime_ms: number;
   first_seen_at: string;
@@ -90,6 +91,7 @@ export interface FeedImage {
   height: number;
   mediaType: MediaType;
   durationMs: number | null;
+  isAnimated?: boolean | null;
   thumbnailUrl: string;
   previewUrl: string;
   sortTimestamp: number;
