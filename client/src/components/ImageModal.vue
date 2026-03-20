@@ -261,12 +261,11 @@
         >
           <!-- Like -->
           <button
+            v-if="authStore.canUseSavedItems"
             class="inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer transition-[opacity,transform,color] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
             :class="{ 'text-[#e5484d]': likesStore.isLiked(image.id) }"
             type="button"
-            :aria-label="
-              likesStore.isLiked(image.id) ? 'Unlike post' : 'Like post'
-            "
+            :aria-label="likesStore.toggleAriaLabel(likesStore.isLiked(image.id))"
             :aria-pressed="likesStore.isLiked(image.id)"
             :disabled="likesStore.isPending(image.id)"
             @click="likesStore.toggleLike(image)"
@@ -324,6 +323,7 @@
             </a>
             <!-- Delete -->
             <button
+              v-if="authStore.canDeleteMedia"
               class="inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-[#d93025] transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
               type="button"
               aria-label="Delete post"
@@ -357,6 +357,7 @@
 
   import type { ImageDetail, FolderSummary } from "../types/api"
   import { useAppStore } from "../stores/app"
+  import { useAuthStore } from "../stores/auth"
   import { useLikesStore } from "../stores/likes"
   import Avatar from "./Avatar.vue"
   import ResilientImage from "./ResilientImage.vue"
@@ -376,6 +377,7 @@
 
   const likesStore = useLikesStore()
   const appStore = useAppStore()
+  const authStore = useAuthStore()
   const route = useRoute()
   const router = useRouter()
   const videoElement = ref<HTMLVideoElement | null>(null)

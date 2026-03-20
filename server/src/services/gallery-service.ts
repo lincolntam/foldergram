@@ -56,6 +56,22 @@ const RAIL_COVER_CANDIDATE_LIMIT = 12;
 type IndexedFeedImage = FeedImage & { playbackStrategy?: PlaybackStrategy | null };
 type IndexedImageDetail = ImageDetail & { playbackStrategy?: PlaybackStrategy | null };
 type IndexedTrashImage = TrashImage & { playbackStrategy?: PlaybackStrategy | null };
+type ScanSummaryRecord = ReturnType<typeof scanRunRepository.latestCompleted>;
+
+function toViewerSafeScanSummary(scan: ScanSummaryRecord | null) {
+  if (!scan) {
+    return null;
+  }
+
+  return {
+    ...scan,
+    error_text: null
+  };
+}
+
+function buildViewerSafeStorageReason(libraryAvailable: boolean): string | null {
+  return libraryAvailable ? null : 'Configured library storage is unavailable.';
+}
 
 function getThumbnailAssetVersion(): string | null {
   const lastCompletedScanId = scanRunRepository.latestCompleted()?.id ?? null;
@@ -818,6 +834,33 @@ export const galleryService = {
     return {
       id: imageRecord.id,
       folderSlug: folder.slug
+    };
+  },
+
+  getStatus() {
+    const lastCompletedScan = scanRunRepository.latestCompleted() ?? null;
+    const storageState = storageService.getState();
+    const scanProgress = scannerService.getProgress();
+    const rebuildRequired = appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY) === '1';
+
+    return {
+      folders: storageState.libraryAvailable ? folderRepository.count() : 0,
+      indexedImages: storageState.libraryAvailable ? imageRepository.countFeed() : 0,
+      indexedVideos: storageState.libraryAvailable ? imageRepository.countByMediaType('video') : 0,
+      scan: {
+        ...scanProgress,
+        currentFolder: null,
+        lastCompletedScan: toViewerSafeScanSummary(lastCompletedScan)
+      },
+      storage: {
+        available: storageState.libraryAvailable,
+        reason: buildViewerSafeStorageReason(storageState.libraryAvailable)
+      },
+      libraryIndex: {
+        rebuildRequired,
+        reason: rebuildRequired ? 'gallery_root_changed' : null,
+        ignoredRootMediaCount: storageState.libraryAvailable ? countSupportedRootMediaFiles(appConfig.galleryRoot) : 0
+      }
     };
   },
 

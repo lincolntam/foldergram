@@ -2,7 +2,7 @@ import { createApp } from 'vue';
 
 import App from './App.vue';
 import { AUTH_REQUIRED_EVENT } from './api/http';
-import { router } from './router';
+import { canAccessRoute, router } from './router';
 import { useAppStore } from './stores/app';
 import { useAuthStore } from './stores/auth';
 import { pinia } from './stores/pinia';
@@ -68,6 +68,10 @@ async function bootstrap() {
     await authStore.initialize();
   } catch {
     // Keep the shell mountable so the auth gate can surface the error state.
+  }
+
+  if (!canAccessRoute(router.currentRoute.value)) {
+    await router.replace({ name: 'home' });
   }
 
   router.afterEach((to) => {

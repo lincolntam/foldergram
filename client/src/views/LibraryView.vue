@@ -240,6 +240,7 @@
           <span>Open folder</span>
         </button>
         <button
+          v-if="authStore.canDeleteMedia"
           class="flex items-center gap-[0.8rem] w-full px-4 py-[0.95rem] border-0 border-b border-border text-[#d93025] bg-transparent cursor-pointer text-left"
           type="button"
           @click="handleDelete"
@@ -341,6 +342,7 @@
   import ErrorState from "../components/ErrorState.vue"
   import { deleteFolder } from "../api/gallery"
   import { useAppStore } from "../stores/app"
+  import { useAuthStore } from "../stores/auth"
   import { useFeedStore } from "../stores/feed"
   import { useLikesStore } from "../stores/likes"
   import { useFoldersStore } from "../stores/folders"
@@ -355,6 +357,7 @@
     | "path-asc"
 
   const appStore = useAppStore()
+  const authStore = useAuthStore()
   const feedStore = useFeedStore()
   const likesStore = useLikesStore()
   const foldersStore = useFoldersStore()
@@ -485,6 +488,10 @@
   }
 
   function handleDelete() {
+    if (!authStore.canDeleteMedia) {
+      return
+    }
+
     confirmDeleteFolder.value = menuFolder.value
     menuFolder.value = null
     deleteSourceFolder.value = false
@@ -502,7 +509,7 @@
   }
 
   async function confirmDelete() {
-    if (!confirmDeleteFolder.value) {
+    if (!confirmDeleteFolder.value || !authStore.canDeleteMedia) {
       return
     }
 

@@ -27,9 +27,14 @@
               The current index may still contain folders and cached media from a previous gallery location. Review the rebuild steps to reset the index, reuse any matching thumbnails and previews, and generate only the missing derivatives for the current library.
             </p>
           </div>
-          <RouterLink class="inline-flex items-center justify-center min-h-10 px-4 rounded-[0.8rem] text-[0.84rem] font-bold text-white bg-[#9f6a00] whitespace-nowrap" :to="{ name: 'settings', query: { action: 'rebuild' } }">
+          <RouterLink
+            v-if="canManageLibrary"
+            class="inline-flex items-center justify-center min-h-10 px-4 rounded-[0.8rem] text-[0.84rem] font-bold text-white bg-[#9f6a00] whitespace-nowrap"
+            :to="{ name: 'settings', query: { action: 'rebuild' } }"
+          >
             Review Rebuild
           </RouterLink>
+          <p v-else class="m-0 text-[0.84rem] text-muted">An admin session needs to rebuild the library.</p>
         </div>
       </section>
 
@@ -140,7 +145,7 @@
         <h2 class="m-0">{{ homeSetupNoticeTitle }}</h2>
         <p class="m-0 text-muted">{{ homeSetupNoticeDescription }}</p>
         <div class="flex items-center gap-4 max-sm:flex-col max-sm:items-start">
-          <button class="btn-primary min-w-[11.5rem]" type="button" :disabled="homeScanDisabled" @click="runHomeScan">
+          <button v-if="canManageLibrary" class="btn-primary min-w-[11.5rem]" type="button" :disabled="homeScanDisabled" @click="runHomeScan">
             {{ homeScanButtonLabel }}
           </button>
           <p class="m-0 text-muted">{{ homeScanNote }}</p>
@@ -193,7 +198,7 @@
 
       <div class="flex items-center justify-between gap-4 text-text text-[0.96rem] font-bold">
         <span>Suggested folders</span>
-        <RouterLink class="text-muted text-[0.76rem] font-bold" :to="{ name: 'likes' }">View likes</RouterLink>
+        <RouterLink class="text-muted text-[0.76rem] font-bold" :to="{ name: 'likes' }">View {{ likesStore.collectionLabel.toLowerCase() }}</RouterLink>
       </div>
 
       <div class="grid gap-[0.95rem]">
@@ -239,6 +244,7 @@ import FeedList from '../components/FeedList.vue';
 import InfiniteLoader from '../components/InfiniteLoader.vue';
 import RailViewerModal from '../components/RailViewerModal.vue';
 import { useAppStore } from '../stores/app';
+import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
 import { useLikesStore } from '../stores/likes';
 import { useFoldersStore } from '../stores/folders';
@@ -247,6 +253,7 @@ import type { FeedMode } from '../types/api';
 import { buildLikedCountByFolder, selectHomeRecommendations } from '../utils/home-recommendations';
 
 const appStore = useAppStore();
+const authStore = useAuthStore();
 const feedStore = useFeedStore();
 const likesStore = useLikesStore();
 const foldersStore = useFoldersStore();
@@ -330,8 +337,14 @@ const homeSetupNoticeStyle = computed(() =>
     : 'background: radial-gradient(circle at top right, rgba(0,149,246,0.12), transparent 38%), linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 92%, var(--accent) 8%) 100%); border-color: color-mix(in srgb, var(--border) 78%, var(--accent) 22%);'
 );
 const homeScanDisabled = computed(
-  () => appStore.isLibraryUnavailable || appStore.isLibraryRebuildRequired || appStore.isScanning || requestingHomeScan.value
+  () =>
+    !authStore.canManageLibrary ||
+    appStore.isLibraryUnavailable ||
+    appStore.isLibraryRebuildRequired ||
+    appStore.isScanning ||
+    requestingHomeScan.value
 );
+const canManageLibrary = computed(() => authStore.canManageLibrary);
 const homeScanButtonLabel = computed(() => {
   if (appStore.isScanning || requestingHomeScan.value) {
     return 'Scanning library...';
@@ -346,6 +359,10 @@ const homeScanNote = computed(() => {
 
   if (appStore.isLibraryRebuildRequired) {
     return 'Rebuild the library index first because the gallery location changed.';
+  }
+
+  if (!authStore.canManageLibrary) {
+    return 'An admin session needs to run the next scan before new folders or moved media will appear here.';
   }
 
   if (appStore.isScanning || requestingHomeScan.value) {
@@ -414,7 +431,7 @@ function updateHomeLayout() {
 }
 
 async function runHomeScan() {
-  if (homeScanDisabled.value) {
+  if (homeScanDisabled.value || !authStore.canManageLibrary) {
     return;
   }
 

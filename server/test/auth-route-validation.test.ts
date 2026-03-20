@@ -50,4 +50,32 @@ describe.sequential('auth route validation', () => {
       })
     ).toThrowError(/Current password must be at most 256 characters\./);
   });
+
+  it('requires a viewer password when viewer access mode is password', () => {
+    expect(() =>
+      authRequestBodySchemas.viewerAccess.parse({
+        mode: 'password'
+      })
+    ).toThrowError(/Viewer password is required when viewer access mode is password\./);
+  });
+
+  it('accepts off mode without a viewer password', () => {
+    expect(
+      authRequestBodySchemas.viewerAccess.parse({
+        mode: 'off'
+      })
+    ).toEqual({
+      mode: 'off'
+    });
+  });
+
+  it('accepts public mode without a viewer password', () => {
+    expect(
+      authRequestBodySchemas.viewerAccess.parse({
+        mode: 'public'
+      })
+    ).toEqual({
+      mode: 'public'
+    });
+  });
 });

@@ -38,18 +38,18 @@
           <span class="w-[1.45rem] h-[1.45rem]" :class="isActive ? 'i-fluent-folder-16-filled' : 'i-fluent-folder-16-regular'" aria-hidden="true" />
         </a>
       </RouterLink>
-      <RouterLink custom :to="{ name: 'likes' }" v-slot="{ href, navigate, isActive }">
+      <RouterLink v-if="authStore.canUseSavedItems" custom :to="{ name: 'likes' }" v-slot="{ href, navigate, isActive }">
         <a
           :href="href"
           class="topbar__icon-link inline-flex items-center justify-center w-11 h-12 rounded-[1rem] border-0 bg-transparent color-inherit cursor-pointer transition-colors duration-150 hover:bg-white/8"
           :class="isActive ? topbarActiveClass : ''"
-          :aria-label="`Likes (${likesStore.items.length})`"
+          :aria-label="`${likesStore.collectionLabel} (${likesStore.items.length})`"
           @click="navigate"
         >
           <span class="w-[1.45rem] h-[1.45rem]" :class="isActive ? 'i-fluent-heart-16-filled' : 'i-fluent-heart-16-regular'" aria-hidden="true" />
         </a>
       </RouterLink>
-      <RouterLink custom :to="{ name: 'trash' }" v-slot="{ href, navigate, isActive }">
+      <RouterLink v-if="authStore.canDeleteMedia" custom :to="{ name: 'trash' }" v-slot="{ href, navigate, isActive }">
         <a
           :href="href"
           class="topbar__icon-link inline-flex items-center justify-center w-11 h-12 rounded-[1rem] border-0 bg-transparent color-inherit cursor-pointer transition-colors duration-150 hover:bg-white/8"
@@ -69,7 +69,7 @@
           </svg>
         </a>
       </RouterLink>
-      <RouterLink custom :to="{ name: 'settings' }" v-slot="{ href, navigate, isActive }">
+      <RouterLink v-if="authStore.canAccessSettings" custom :to="{ name: 'settings' }" v-slot="{ href, navigate, isActive }">
         <a
           :href="href"
           class="topbar__icon-link inline-flex items-center justify-center w-11 h-12 rounded-[1rem] border-0 bg-transparent color-inherit cursor-pointer transition-colors duration-150 hover:bg-white/8"
@@ -80,6 +80,25 @@
           <span class="w-[1.45rem] h-[1.45rem]" :class="isActive ? 'i-fluent-settings-16-filled' : 'i-fluent-settings-16-regular'" aria-hidden="true" />
         </a>
       </RouterLink>
+      <button
+        v-if="authStore.canUnlockAdmin"
+        class="inline-flex items-center justify-center w-11 h-12 rounded-[1rem] color-inherit bg-transparent border-0 cursor-pointer transition-colors duration-150 hover:bg-white/8"
+        type="button"
+        aria-label="Unlock admin"
+        @click="authStore.openUnlockDialog()"
+      >
+        <span class="i-fluent-key-16-regular w-[1.45rem] h-[1.45rem]" aria-hidden="true" />
+      </button>
+      <button
+        v-if="authStore.authenticated"
+        class="inline-flex items-center justify-center w-11 h-12 rounded-[1rem] color-inherit bg-transparent border-0 cursor-pointer transition-colors duration-150 hover:bg-white/8 disabled:opacity-60 disabled:cursor-wait"
+        type="button"
+        :aria-label="signOutLabel"
+        :disabled="authStore.loading"
+        @click="handleSignOut"
+      >
+        <span class="i-fluent-arrow-exit-20-regular w-[1.45rem] h-[1.45rem]" aria-hidden="true" />
+      </button>
       <button class="inline-flex items-center justify-center w-11 h-12 rounded-[1rem] color-inherit bg-transparent border-0 cursor-pointer transition-colors duration-150 hover:bg-white/8" type="button" :aria-label="themeLabel" @click="appStore.toggleTheme()">
         <svg v-if="appStore.theme === 'light'" class="w-[1.45rem] h-[1.45rem]" viewBox="0 0 24 24" role="presentation">
           <path
@@ -111,11 +130,22 @@ import { computed } from 'vue';
 import { RouterLink } from 'vue-router';
 
 import { useAppStore } from '../stores/app';
+import { useAuthStore } from '../stores/auth';
 import { useLikesStore } from '../stores/likes';
 import BrandMark from './BrandMark.vue';
 
 const appStore = useAppStore();
+const authStore = useAuthStore();
 const likesStore = useLikesStore();
 const themeLabel = computed(() => (appStore.theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'));
+const signOutLabel = computed(() => (authStore.accessMode === 'public' ? 'Return to public view' : 'Sign out'));
 const topbarActiveClass = 'router-link-active bg-[rgba(255,255,255,0.08)]';
+
+async function handleSignOut() {
+  try {
+    await authStore.logout();
+  } catch {
+    // Keep the current shell visible and let auth-store error handling surface the failure.
+  }
+}
 </script>

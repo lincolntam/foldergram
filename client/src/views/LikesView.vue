@@ -6,23 +6,23 @@
       :description="appStore.libraryUnavailableReason"
     />
     <section v-else-if="appStore.isRebuilding && likesStore.items.length === 0" class="card p-8 text-center">
-      <p class="m-0 text-muted">Rebuilding the library index. Likes will return after the refreshed library finishes loading.</p>
+      <p class="m-0 text-muted">Rebuilding the library index. {{ likesStore.collectionLabel }} will return after the refreshed library finishes loading.</p>
     </section>
-    <ErrorState v-else-if="likesStore.error" title="Could not load likes" :message="likesStore.error" />
+    <ErrorState v-else-if="likesStore.error" :title="likesStore.errorTitle" :message="likesStore.error" />
     <template v-else>
-      <div class="flex justify-center py-[0.95rem] mb-[0.45rem] border-t border-border" aria-label="Likes sections">
+      <div class="flex justify-center py-[0.95rem] mb-[0.45rem] border-t border-border" :aria-label="`${likesStore.collectionLabel} sections`">
         <span class="relative pt-[0.1rem] text-text text-[0.78rem] font-bold tracking-[0.11em] uppercase">
           <span class="absolute left-0 right-0 top-[-1.05rem] h-px bg-text" aria-hidden="true"></span>
-          Liked posts
+          {{ likesStore.collectionSectionLabel }}
         </span>
       </div>
       <EmptyState
         v-if="!likesStore.loading && likesStore.items.length === 0"
-        title="No liked posts yet"
-        description="Tap the heart under any post and it will appear here."
+        :title="likesStore.emptyTitle"
+        :description="likesStore.emptyDescription"
       />
       <div v-else-if="likesStore.loading" class="card p-8 text-center">
-        <p class="text-muted">Loading likes...</p>
+        <p class="text-muted">{{ likesStore.loadingLabel }}</p>
       </div>
       <FolderGrid v-else :items="likesStore.items" />
     </template>

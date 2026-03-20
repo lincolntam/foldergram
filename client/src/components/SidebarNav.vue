@@ -110,6 +110,7 @@
       </RouterLink>
 
       <RouterLink
+        v-if="authStore.canUseSavedItems"
         custom
         :to="{ name: 'likes' }"
         v-slot="{ href, navigate, isActive }"
@@ -136,7 +137,7 @@
                 opacity 0.18s ease,
                 max-width 0.22s ease;
             "
-            >Likes</span
+            >{{ likesStore.collectionLabel }}</span
           >
           <small
             class="sidebar__badge sidebar__meta ml-auto max-w-0 min-w-[1.5rem] overflow-hidden whitespace-nowrap rounded-full bg-white/12 px-[0.45rem] py-[0.1rem] text-center text-[0.72rem] font-bold text-white/86 opacity-0 group-hover:max-w-[12rem] group-hover:opacity-100"
@@ -216,6 +217,7 @@
           class="absolute bottom-[calc(100%+0.35rem)] left-0 w-[18rem] overflow-hidden rounded-[1.55rem] border border-border bg-[color-mix(in_srgb,var(--surface)_96%,var(--bg)_4%)] shadow-[0_28px_70px_rgba(0,0,0,0.24)]"
         >
           <RouterLink
+            v-if="authStore.canDeleteMedia"
             class="flex items-center gap-[0.95rem] px-[1.2rem] py-[1rem] text-[0.98rem] text-text transition-colors duration-150 hover:bg-surface-hover"
             :to="{ name: 'trash' }"
             @click="closeMoreMenu"
@@ -238,6 +240,7 @@
           </RouterLink>
 
           <RouterLink
+            v-if="authStore.canAccessSettings"
             class="flex items-center gap-[0.95rem] px-[1.2rem] py-[1rem] text-[0.98rem] text-text transition-colors duration-150 hover:bg-surface-hover"
             :to="{ name: 'settings' }"
             @click="closeMoreMenu"
@@ -248,6 +251,20 @@
             />
             <span>Settings</span>
           </RouterLink>
+
+          <button
+            v-if="authStore.canUnlockAdmin"
+            class="flex items-center gap-[0.95rem] w-full px-[1.2rem] py-[1rem] border-0 bg-transparent text-[0.98rem] text-text cursor-pointer text-left transition-colors duration-150 hover:bg-surface-hover disabled:opacity-60 disabled:cursor-wait"
+            type="button"
+            :disabled="authStore.loading"
+            @click="handleUnlockAdmin"
+          >
+            <span
+              class="i-fluent-key-16-regular w-[1.18rem] h-[1.18rem] shrink-0"
+              aria-hidden="true"
+            />
+            <span>Unlock admin</span>
+          </button>
 
           <button
             class="flex items-center gap-[0.95rem] w-full px-[1.2rem] py-[1rem] border-0 bg-transparent text-[0.98rem] text-text cursor-pointer text-left transition-colors duration-150 hover:bg-surface-hover"
@@ -287,6 +304,20 @@
             </svg>
             <span>Switch appearance</span>
           </button>
+
+          <button
+            v-if="authStore.authenticated"
+            class="flex items-center gap-[0.95rem] w-full px-[1.2rem] py-[1rem] border-0 bg-transparent text-[0.98rem] text-text cursor-pointer text-left transition-colors duration-150 hover:bg-surface-hover disabled:opacity-60 disabled:cursor-wait"
+            type="button"
+            :disabled="authStore.loading"
+            @click="handleSignOut"
+          >
+            <span
+              class="i-fluent-arrow-exit-20-regular w-[1.18rem] h-[1.18rem] shrink-0"
+              aria-hidden="true"
+            />
+            <span>{{ signOutLabel }}</span>
+          </button>
         </div>
 
         <button
@@ -322,6 +353,7 @@
   import { RouterLink, useRoute } from "vue-router"
 
   import { useAppStore } from "../stores/app"
+  import { useAuthStore } from "../stores/auth"
   import { useLikesStore } from "../stores/likes"
   import { useFoldersStore } from "../stores/folders"
   import { buildLikedCountByFolder } from "../utils/home-recommendations"
@@ -331,6 +363,7 @@
 
   const appVersion = __APP_VERSION__
   const appStore = useAppStore()
+  const authStore = useAuthStore()
   const likesStore = useLikesStore()
   const foldersStore = useFoldersStore()
   const route = useRoute()
@@ -349,6 +382,9 @@
   const appearanceLabel = computed(() =>
     appStore.theme === "light" ? "Switch to dark mode" : "Switch to light mode",
   )
+  const signOutLabel = computed(() =>
+    authStore.accessMode === "public" ? "Return to public view" : "Sign out",
+  )
   const sidebarActiveClass =
     "router-link-active bg-[color-mix(in_srgb,var(--surface)_92%,transparent_8%)] font-bold"
 
@@ -363,6 +399,21 @@
   function handleAppearanceToggle() {
     appStore.toggleTheme()
     closeMoreMenu()
+  }
+
+  function handleUnlockAdmin() {
+    authStore.openUnlockDialog()
+    closeMoreMenu()
+  }
+
+  async function handleSignOut() {
+    closeMoreMenu()
+
+    try {
+      await authStore.logout()
+    } catch {
+      // Keep the current shell visible and let auth-store error handling surface the failure.
+    }
   }
 
   function handleWindowKeydown(event: KeyboardEvent) {

@@ -90,7 +90,9 @@ need a different host port, edit the left side of that mapping in
 `docker-compose.yml`.
 
 If the app will be reachable from other devices on your network, enable the
-shared password from the Settings page after first startup.
+admin password from the Settings page after first startup. You can then keep
+the app admin-only, add a separate viewer password, or switch to public browse
+mode with admin unlock.
 
 ## If you already cloned this repository
 

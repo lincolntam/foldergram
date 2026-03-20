@@ -93,20 +93,23 @@ The detail view includes:
 - size, dimensions, MIME type, and duration metadata
 - like toggle
 - original-file link
-- delete action with confirmation
+- delete action with confirmation for admin sessions only
 
-## Likes
+## Likes and Favorites
 
-Likes are stored locally in the `likes` table.
+Foldergram has two saved-items modes:
 
-The Likes view:
+- signed-in `admin` and `viewer` sessions use shared SQLite likes through `GET /api/likes`
+- anonymous public sessions use browser-local favorites stored in `localStorage`
 
-- fetches from `GET /api/likes`
-- shows liked posts ordered by like time
+The saved-items view:
+
+- shows liked or favorited posts ordered by the most recent toggle in that mode
 - updates optimistically in the UI
 - drops deleted posts automatically when they are removed
+- stays intentionally separate between shared likes and local favorites
 
-There is no shared social layer behind likes.
+There is no shared social layer behind either mode.
 
 ## Moments
 
@@ -124,7 +127,8 @@ Settings is the operational control surface for the library.
 
 It exposes:
 
-- shared-password protection controls
+- admin-password controls
+- viewer password and public access controls
 - live scan status
 - storage and index status
 - last completed scan details
@@ -132,16 +136,27 @@ It exposes:
 - thumbnail-only rebuild
 - full library rebuild
 
-### Shared-password protection
+### Access protection
 
-Settings can optionally enable a single shared password for the app.
+Settings can optionally enable role-based local access for the app.
 
 That flow supports:
 
-- turning password protection on
-- changing the shared password
+- turning the admin password on
+- changing the admin password
 - disabling protection again
+- enabling or disabling a separate viewer password
+- enabling anonymous public browse mode
+- rotating the viewer password without knowing the current one
 - signing the current browser session out
+
+Current non-admin behavior:
+
+- viewers can browse the library and use shared likes
+- anonymous public visitors can browse immediately and use browser-local favorites
+- `viewer` and `anonymous` sessions can elevate through `Unlock admin`
+- non-admin sessions cannot open Settings
+- non-admin sessions cannot use Trash, delete actions, scans, or rebuild actions
 
 ### Rebuild actions
 

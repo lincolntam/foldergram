@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { AUTH_PASSWORD_MAX_LENGTH, AUTH_PASSWORD_MIN_LENGTH, authService } from '../services/auth-service.js';
 import { galleryService } from '../services/gallery-service.js';
+import { requireCapability } from '../middleware/auth-protection.js';
 import { createRateLimiter } from '../middleware/rate-limit.js';
 import { LIBRARY_REBUILD_REQUIRED_MESSAGE, scannerService } from '../services/scanner-service.js';
 import { storageService } from '../services/storage-service.js';
@@ -75,12 +76,27 @@ const changePasswordBodySchema = z.object({
 const disablePasswordBodySchema = z.object({
   currentPassword: submittedCurrentPasswordSchema
 });
+const viewerAccessBodySchema = z
+  .object({
+    mode: z.enum(['off', 'password', 'public']),
+    viewerPassword: passwordFieldSchema.optional()
+  })
+  .superRefine((body, context) => {
+    if (body.mode === 'password' && !body.viewerPassword) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Viewer password is required when viewer access mode is password.',
+        path: ['viewerPassword']
+      });
+    }
+  });
 
 export const authRequestBodySchemas = {
   login: loginBodySchema,
   configurePassword: configurePasswordBodySchema,
   changePassword: changePasswordBodySchema,
-  disablePassword: disablePasswordBodySchema
+  disablePassword: disablePasswordBodySchema,
+  viewerAccess: viewerAccessBodySchema
 };
 
 const authRateLimiter = createRateLimiter({
@@ -116,15 +132,37 @@ router.post('/auth/login', authRateLimiter, (request, response) => {
   }
 
   const body = loginBodySchema.parse(request.body);
-  if (!authService.verifyPassword(body.password)) {
+  const role = authService.authenticatePassword(body.password);
+  if (!role) {
     response.status(401).json({ message: 'Incorrect password.' });
     return;
   }
 
-  authService.setAuthenticatedSession(response, request);
+  authService.setAuthenticatedSession(response, request, role);
   response.json({
     ok: true,
-    auth: authService.getAuthenticatedStatus()
+    auth: authService.getAuthenticatedStatus(role)
+  });
+});
+
+router.post('/auth/unlock-admin', authRateLimiter, (request, response) => {
+  authService.setNoStoreHeaders(response);
+
+  if (!authService.isEnabled()) {
+    response.status(400).json({ message: 'Password protection is not enabled.' });
+    return;
+  }
+
+  const body = loginBodySchema.parse(request.body);
+  if (!authService.verifyAdminPassword(body.password)) {
+    response.status(401).json({ message: 'Incorrect admin password.' });
+    return;
+  }
+
+  authService.setAuthenticatedSession(response, request, 'admin');
+  response.json({
+    ok: true,
+    auth: authService.getAuthenticatedStatus('admin')
   });
 });
 
@@ -142,8 +180,8 @@ router.put('/auth/password', authRateLimiter, (request, response) => {
 
   if (!authService.isEnabled()) {
     const body = configurePasswordBodySchema.parse(request.body);
-    const auth = authService.setPassword(body.password);
-    authService.setAuthenticatedSession(response, request);
+    const auth = authService.setAdminPassword(body.password);
+    authService.setAuthenticatedSession(response, request, 'admin');
     response.json({
       ok: true,
       auth
@@ -151,14 +189,19 @@ router.put('/auth/password', authRateLimiter, (request, response) => {
     return;
   }
 
+  if (!authService.hasCapability(request, 'canAccessSettings')) {
+    response.status(403).json({ message: 'Admin access is required.' });
+    return;
+  }
+
   const body = changePasswordBodySchema.parse(request.body);
-  if (!authService.verifyPassword(body.currentPassword)) {
+  if (!authService.verifyAdminPassword(body.currentPassword)) {
     response.status(401).json({ message: 'Incorrect current password.' });
     return;
   }
 
-  const auth = authService.setPassword(body.password);
-  authService.setAuthenticatedSession(response, request);
+  const auth = authService.setAdminPassword(body.password);
+  authService.setAuthenticatedSession(response, request, 'admin');
   response.json({
     ok: true,
     auth
@@ -173,8 +216,13 @@ router.delete('/auth/password', authRateLimiter, (request, response) => {
     return;
   }
 
+  if (!authService.hasCapability(request, 'canAccessSettings')) {
+    response.status(403).json({ message: 'Admin access is required.' });
+    return;
+  }
+
   const body = disablePasswordBodySchema.parse(request.body);
-  if (!authService.verifyPassword(body.currentPassword)) {
+  if (!authService.verifyAdminPassword(body.currentPassword)) {
     response.status(401).json({ message: 'Incorrect current password.' });
     return;
   }
@@ -187,9 +235,35 @@ router.delete('/auth/password', authRateLimiter, (request, response) => {
   });
 });
 
+router.put('/auth/viewer-access', authRateLimiter, (request, response) => {
+  authService.setNoStoreHeaders(response);
+
+  if (!authService.isEnabled()) {
+    response.status(400).json({ message: 'Enable the admin password before configuring viewer access.' });
+    return;
+  }
+
+  if (!authService.hasCapability(request, 'canAccessSettings')) {
+    response.status(403).json({ message: 'Admin access is required.' });
+    return;
+  }
+
+  const body = viewerAccessBodySchema.parse(request.body);
+  const auth = authService.setViewerAccess(body.mode, body.viewerPassword ?? null);
+  authService.setAuthenticatedSession(response, request, 'admin');
+  response.json({
+    ok: true,
+    auth
+  });
+});
+
 router.get('/feed', (request, response) => {
   const query = feedQuerySchema.parse(request.query);
   response.json(galleryService.getFeed(query.page, query.limit, query.mode, query.seed));
+});
+
+router.get('/status', (_request, response) => {
+  response.json(galleryService.getStatus());
 });
 
 router.get('/feed/moments', (_request, response) => {
@@ -227,7 +301,7 @@ router.get('/folders/:slug', (request, response) => {
   response.json(folder);
 });
 
-router.delete('/folders/:slug', async (request, response) => {
+router.delete('/folders/:slug', requireCapability('canDeleteMedia', 'Admin access is required.'), async (request, response) => {
   const params = slugSchema.parse(request.params);
   const query = deleteFolderQuerySchema.parse(request.query);
   const deleted = await galleryService.deleteFolder(params.slug, {
@@ -258,11 +332,11 @@ router.get('/folders/:slug/images', (request, response) => {
   response.json(payload);
 });
 
-router.get('/likes', (_request, response) => {
+router.get('/likes', requireCapability('canUseSharedLikes', 'Authentication required.'), (_request, response) => {
   response.json(galleryService.getLikes());
 });
 
-router.get('/trash/images', (request, response) => {
+router.get('/trash/images', requireCapability('canDeleteMedia', 'Admin access is required.'), (request, response) => {
   const query = paginationQuerySchema.parse(request.query);
   response.json(galleryService.getTrashImages(query.page, query.limit));
 });
@@ -280,7 +354,7 @@ router.get('/images/:id', (request, response) => {
   response.json(image);
 });
 
-router.post('/images/:id/like', (request, response) => {
+router.post('/images/:id/like', requireCapability('canUseSharedLikes', 'Authentication required.'), (request, response) => {
   const params = imageIdSchema.parse(request.params);
   const payload = galleryService.likeImage(params.id);
 
@@ -295,7 +369,7 @@ router.post('/images/:id/like', (request, response) => {
   });
 });
 
-router.delete('/images/:id/like', (request, response) => {
+router.delete('/images/:id/like', requireCapability('canUseSharedLikes', 'Authentication required.'), (request, response) => {
   const params = imageIdSchema.parse(request.params);
   const payload = galleryService.unlikeImage(params.id);
 
@@ -310,7 +384,7 @@ router.delete('/images/:id/like', (request, response) => {
   });
 });
 
-router.post('/images/:id/trash', (request, response) => {
+router.post('/images/:id/trash', requireCapability('canDeleteMedia', 'Admin access is required.'), (request, response) => {
   const params = imageIdSchema.parse(request.params);
   const payload = galleryService.trashImage(params.id);
 
@@ -325,7 +399,7 @@ router.post('/images/:id/trash', (request, response) => {
   });
 });
 
-router.post('/images/:id/restore', (request, response) => {
+router.post('/images/:id/restore', requireCapability('canDeleteMedia', 'Admin access is required.'), (request, response) => {
   const params = imageIdSchema.parse(request.params);
   const payload = galleryService.restoreImage(params.id);
 
@@ -340,7 +414,7 @@ router.post('/images/:id/restore', (request, response) => {
   });
 });
 
-router.delete('/images/:id', async (request, response) => {
+router.delete('/images/:id', requireCapability('canDeleteMedia', 'Admin access is required.'), async (request, response) => {
   const params = imageIdSchema.parse(request.params);
   const deleted = await galleryService.deleteImage(params.id);
 
@@ -383,7 +457,12 @@ const requireNoScanInProgress = (_request: express.Request, response: express.Re
   next();
 };
 
-router.post('/admin/rescan', adminMutationRateLimiter, requireNoScanInProgress, async (_request, response) => {
+router.post(
+  '/admin/rescan',
+  requireCapability('canManageLibrary', 'Admin access is required.'),
+  adminMutationRateLimiter,
+  requireNoScanInProgress,
+  async (_request, response) => {
   try {
     if (scannerService.isLibraryRebuildRequired()) {
       response.status(409).json({
@@ -405,7 +484,12 @@ router.post('/admin/rescan', adminMutationRateLimiter, requireNoScanInProgress, 
   }
 });
 
-router.post('/admin/rebuild-index', adminMutationRateLimiter, requireNoScanInProgress, async (_request, response) => {
+router.post(
+  '/admin/rebuild-index',
+  requireCapability('canManageLibrary', 'Admin access is required.'),
+  adminMutationRateLimiter,
+  requireNoScanInProgress,
+  async (_request, response) => {
   await watcherService.stop();
 
   try {
@@ -419,7 +503,12 @@ router.post('/admin/rebuild-index', adminMutationRateLimiter, requireNoScanInPro
   }
 });
 
-router.post('/admin/rebuild-thumbnails', adminMutationRateLimiter, requireNoScanInProgress, async (_request, response) => {
+router.post(
+  '/admin/rebuild-thumbnails',
+  requireCapability('canManageLibrary', 'Admin access is required.'),
+  adminMutationRateLimiter,
+  requireNoScanInProgress,
+  async (_request, response) => {
   if (scannerService.isLibraryRebuildRequired()) {
     response.status(409).json({
       message: LIBRARY_REBUILD_REQUIRED_MESSAGE
@@ -444,7 +533,7 @@ router.post('/admin/rebuild-thumbnails', adminMutationRateLimiter, requireNoScan
   }
 });
 
-router.get('/admin/stats', (_request, response) => {
+router.get('/admin/stats', requireCapability('canAccessSettings', 'Admin access is required.'), (_request, response) => {
   response.json(galleryService.getStats());
 });
 

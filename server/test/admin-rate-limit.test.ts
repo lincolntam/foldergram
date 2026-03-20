@@ -11,6 +11,7 @@ type EnvModule = typeof import('../src/config/env.js');
 interface MockResponse {
   status: ReturnType<typeof vi.fn>;
   json: ReturnType<typeof vi.fn>;
+  setHeader: ReturnType<typeof vi.fn>;
 }
 
 interface RouteLayer {
@@ -62,14 +63,15 @@ describe.sequential('admin route rate limiting', () => {
   it('does not attach the mutation rate limiter to admin stats', () => {
     const handlers = getRouteHandlers('/admin/stats', 'get');
 
-    expect(handlers).toHaveLength(1);
+    expect(handlers.length).toBeGreaterThanOrEqual(2);
 
     const request = { ip: '127.0.0.1' } as express.Request;
+    const terminalHandler = handlers.at(-1)!;
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const response = createResponse();
 
-      handlers[0](request, response as unknown as express.Response, vi.fn());
+      terminalHandler(request, response as unknown as express.Response, vi.fn());
 
       expect(response.status).not.toHaveBeenCalled();
       expect(response.json).toHaveBeenCalledOnce();
@@ -79,15 +81,16 @@ describe.sequential('admin route rate limiting', () => {
   it('keeps the mutation rate limiter on admin rescan', () => {
     const handlers = getRouteHandlers('/admin/rescan', 'post');
 
-    expect(handlers.length).toBeGreaterThanOrEqual(2);
+    expect(handlers.length).toBeGreaterThanOrEqual(3);
 
     const request = { ip: '127.0.0.1' } as express.Request;
+    const rateLimiter = handlers[1]!;
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const response = createResponse();
       const next = vi.fn();
 
-      handlers[0](request, response as unknown as express.Response, next);
+      rateLimiter(request, response as unknown as express.Response, next);
 
       expect(next).toHaveBeenCalledOnce();
       expect(response.status).not.toHaveBeenCalled();
@@ -96,7 +99,7 @@ describe.sequential('admin route rate limiting', () => {
     const response = createResponse();
     const next = vi.fn();
 
-    handlers[0](request, response as unknown as express.Response, next);
+    rateLimiter(request, response as unknown as express.Response, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(429);
@@ -120,6 +123,7 @@ describe.sequential('admin route rate limiting', () => {
 function createResponse(): MockResponse {
   return {
     status: vi.fn().mockReturnThis(),
-    json: vi.fn().mockReturnThis()
+    json: vi.fn().mockReturnThis(),
+    setHeader: vi.fn()
   };
 }

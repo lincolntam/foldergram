@@ -1,7 +1,9 @@
 import type {
+  AppStatus,
   AppStats,
   AuthMutationResult,
   AuthStatus,
+  ViewerAccessMode,
   DeleteImageResult,
   DeleteFolderResult,
   FeedMode,
@@ -127,6 +129,10 @@ export function deleteFolder(slug: string, options: { deleteSourceFolder?: boole
 }
 
 export function fetchStats() {
+  return requestJson<AppStatus>('/api/status');
+}
+
+export function fetchAdminStats() {
   return requestJson<AppStats>('/api/admin/stats');
 }
 
@@ -136,6 +142,16 @@ export function fetchAuthStatus() {
 
 export function loginWithPassword(password: string) {
   return requestJson<AuthMutationResult>('/api/auth/login', {
+    body: JSON.stringify({ password }),
+    headers: {
+      'content-type': 'application/json'
+    },
+    method: 'POST'
+  });
+}
+
+export function unlockAdmin(password: string) {
+  return requestJson<AuthMutationResult>('/api/auth/unlock-admin', {
     body: JSON.stringify({ password }),
     headers: {
       'content-type': 'application/json'
@@ -177,6 +193,19 @@ export function disablePasswordProtection(currentPassword: string) {
       'content-type': 'application/json'
     },
     method: 'DELETE'
+  });
+}
+
+export function updateViewerAccess(mode: ViewerAccessMode, viewerPassword?: string) {
+  return requestJson<AuthMutationResult>('/api/auth/viewer-access', {
+    body: JSON.stringify({
+      mode,
+      viewerPassword
+    }),
+    headers: {
+      'content-type': 'application/json'
+    },
+    method: 'PUT'
   });
 }
 

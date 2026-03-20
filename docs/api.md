@@ -17,14 +17,17 @@ All documented routes come from `server/src/routes/api.ts`.
 
 ## Authentication and protected routes
 
-Foldergram can optionally require a shared-password session.
+Foldergram can optionally require a role-bearing password session.
 
 When password protection is enabled:
 
-- most `/api` routes return `401` until the browser logs in
-- `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/login`, and `POST /api/auth/logout` stay reachable without an authenticated session
-- `PUT /api/auth/password` is public only when password protection is currently disabled, so the first password can be set
-- `/thumbnails/...` and `/previews/...` also require the same authenticated session
+- most `/api` routes return `401` until the browser logs in, except for safe read routes in public viewer mode
+- `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/login`, `POST /api/auth/unlock-admin`, and `POST /api/auth/logout` stay reachable without an authenticated session
+- `PUT /api/auth/password` is public only when password protection is currently disabled, so the first admin password can be set
+- `/thumbnails/...` and `/previews/...` also require the same authenticated session unless public viewer mode is enabled
+- authenticated sessions carry `admin` or `viewer` role data
+- anonymous public reads use `role: "anonymous"` and `likesMode: "local"`
+- admin-only mutations return `403` for viewer sessions
 
 The frontend sends same-origin credentials automatically and uses a signed
 cookie-based session.
@@ -57,7 +60,7 @@ The shipped frontend adds `x-foldergram-intent: 1` automatically for `POST`,
 | --- | --- |
 | `401` | Password protection is enabled and the request is not authenticated. |
 | `400` | Validation or request-shape errors surfaced through the Express error handler. |
-| `403` | Missing intent header or failed local-origin check on a mutating route. |
+| `403` | Missing intent header, failed local-origin check, or a viewer session hitting an admin-only route. |
 | `404` | Missing folder, post, moment, or original media. |
 | `409` | A scan or thumbnail rebuild was requested while the library requires a full rebuild after a gallery-root change. |
 
@@ -90,7 +93,17 @@ Example shape:
 ```json
 {
   "enabled": true,
-  "authenticated": false
+  "authenticated": false,
+  "role": "anonymous",
+  "accessMode": "public",
+  "likesMode": "local",
+  "capabilities": {
+    "canManageLibrary": false,
+    "canDeleteMedia": false,
+    "canAccessSettings": false,
+    "canUseSharedLikes": false,
+    "canUseLocalFavorites": true
+  }
 }
 ```
 
@@ -242,6 +255,11 @@ Returns:
 
 Items are ordered by like timestamp descending.
 
+Notes:
+
+- shared likes are available to `admin` and `viewer` sessions
+- anonymous public sessions use browser-local favorites instead of this endpoint
+
 ### `GET /api/images/:id`
 
 Query parameters:
@@ -281,9 +299,14 @@ Errors:
 
 - `404` with `{"message":"Original media not found"}`
 
-### `GET /api/admin/stats`
+### `GET /api/status`
 
-Returns aggregated operational state.
+Returns viewer-safe operational state for the shell.
+
+When access protection is enabled:
+
+- `admin` and `viewer` sessions can always read it
+- anonymous visitors can also read it when `viewer_access_mode=public`
 
 Notable fields:
 
@@ -292,12 +315,26 @@ Notable fields:
 | `folders` | Active indexed folders. |
 | `indexedImages` | Active indexed posts. The name is historical and still includes videos in the total feed count. |
 | `indexedVideos` | Active indexed videos only. |
+| `scan` | Live scan progress snapshot. `currentFolder` is redacted and `lastCompletedScan.error_text` is always `null`. |
+| `storage` | Availability with a generic unavailable message only. |
+| `libraryIndex` | Rebuild requirement plus ignored root-media count. Gallery-root paths are omitted. |
+
+### `GET /api/admin/stats`
+
+Returns the full admin operational payload.
+
+This route is read-only but `admin`-only. It extends `GET /api/status` with the
+additional fields below:
+
+| Field | Notes |
+| --- | --- |
 | `deletedImages` | Soft-deleted post count. |
 | `thumbnailCount` | Active posts with a thumbnail path. |
 | `previewCount` | Active items with a preview output. Videos served directly from originals are excluded here. |
-| `scan` | Live scan progress snapshot. |
-| `storage` | Availability and in-memory-database state. |
-| `libraryIndex` | Current and previous gallery-root state, plus rebuild requirement. |
+| `storage.usingInMemoryDatabase` | Whether SQLite had to fall back to in-memory mode. |
+| `libraryIndex.currentGalleryRoot` | Current configured gallery root. |
+| `libraryIndex.previousGalleryRoot` | Prior configured gallery root when the root changed. |
+| `libraryIndex.lastSuccessfulGalleryRoot` | Gallery root from the last completed successful scan. |
 | `lastScan` | Last completed scan run. |
 
 ## Mutating endpoints
@@ -308,7 +345,7 @@ Body:
 
 ```json
 {
-  "password": "your-shared-password"
+  "password": "your-admin-or-viewer-password"
 }
 ```
 
@@ -319,7 +356,17 @@ Success:
   "ok": true,
   "auth": {
     "enabled": true,
-    "authenticated": true
+    "authenticated": true,
+    "role": "viewer",
+    "accessMode": "password",
+    "likesMode": "shared",
+    "capabilities": {
+      "canManageLibrary": false,
+      "canDeleteMedia": false,
+      "canAccessSettings": false,
+      "canUseSharedLikes": true,
+      "canUseLocalFavorites": false
+    }
   }
 }
 ```
@@ -328,6 +375,50 @@ Errors:
 
 - `400` if password protection is not enabled
 - `401` if the password is incorrect
+- `403` when trust requirements are missing
+
+### `POST /api/auth/unlock-admin`
+
+Elevates the current browser into an admin session by verifying the admin
+password.
+
+This route stays reachable without an existing authenticated session so it can
+be used from viewer mode and public mode.
+
+Body:
+
+```json
+{
+  "password": "your-admin-password"
+}
+```
+
+Success:
+
+```json
+{
+  "ok": true,
+  "auth": {
+    "enabled": true,
+    "authenticated": true,
+    "role": "admin",
+    "accessMode": "public",
+    "likesMode": "shared",
+    "capabilities": {
+      "canManageLibrary": true,
+      "canDeleteMedia": true,
+      "canAccessSettings": true,
+      "canUseSharedLikes": true,
+      "canUseLocalFavorites": false
+    }
+  }
+}
+```
+
+Errors:
+
+- `400` if password protection is not enabled
+- `401` if the admin password is incorrect
 - `403` when trust requirements are missing
 
 ### `POST /api/auth/logout`
@@ -348,7 +439,7 @@ Success:
 
 ### `PUT /api/auth/password`
 
-Sets or changes the shared password.
+Sets or changes the admin password.
 
 Body when protection is disabled:
 
@@ -370,11 +461,12 @@ Body when protection is already enabled:
 Notes:
 
 - password minimum length is `8`
+- `viewer` sessions receive `403`
 - changing the password invalidates older sessions
 
 ### `DELETE /api/auth/password`
 
-Disables shared-password protection.
+Disables password protection entirely.
 
 Body:
 
@@ -388,6 +480,36 @@ Errors:
 
 - `400` if protection is already disabled
 - `401` if the password is incorrect
+- `403` if the current session is not `admin`
+
+### `PUT /api/auth/viewer-access`
+
+Configures viewer access mode.
+
+Body for admin-only access:
+
+```json
+{
+  "mode": "off"
+}
+```
+
+Body for password-protected viewer access:
+
+```json
+{
+  "mode": "password",
+  "viewerPassword": "viewer-password"
+}
+```
+
+Notes:
+
+- `viewerPassword` is required when `mode=password`
+- viewer and admin passwords must differ
+- changing viewer access invalidates older sessions
+- `mode=public` enables anonymous browsing immediately
+- anonymous public sessions use local browser favorites instead of shared `/api/likes`
 
 ### `POST /api/images/:id/like`
 
@@ -445,6 +567,7 @@ Success:
 Errors:
 
 - `404` with `{"message":"Image not found"}`
+- `403` for viewer sessions
 - `403` when trust requirements are missing
 
 ### `DELETE /api/folders/:slug`
@@ -482,6 +605,7 @@ Success shape:
 Errors:
 
 - `404` with `{"message":"Folder not found"}`
+- `403` for viewer sessions
 - `403` when trust requirements are missing
 
 ### `POST /api/admin/rescan`
@@ -505,6 +629,7 @@ Success:
 Errors:
 
 - `409` with the library-rebuild-required message when the gallery root changed
+- `403` for viewer sessions
 - `500` for scan failures surfaced from the scanner
 
 ### `POST /api/admin/rebuild-index`
@@ -535,6 +660,7 @@ It does **not** reset:
 Errors:
 
 - `409` with the library-rebuild-required message when a full rebuild is required
+- `403` for viewer sessions
 
 ## Client helpers
 

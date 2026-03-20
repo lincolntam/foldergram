@@ -1,36 +1,44 @@
 ---
 title: Security
-description: The real security posture of Foldergram, including shared-password protection, mutation trust checks, and local-only caveats.
+description: The real security posture of Foldergram, including admin/viewer/public access control, mutation trust checks, and local-only caveats.
 ---
 
 # Security
 
 Foldergram is built for local-only and self-hosted browsing.
 Its security model is intentionally narrow even though it now supports an
-optional shared-password gate for homelab and LAN use.
+optional admin/viewer/public access gate for homelab and LAN use.
 
 ## What Foldergram assumes
 
 - you run it on your own machine or behind a trusted local-network or reverse-proxy setup
 - the app is not exposed directly to the public internet without additional protection
-- the built-in auth story is a single shared password, not a multi-user account system
+- the built-in auth story is a small role-based password gate, not a multi-user account system
 
-## Shared-password protection
+## Password protection
 
-Foldergram can optionally protect the library with one shared password
-configured from the Settings page.
+Foldergram can optionally protect the library from the Settings page with:
+
+- an `admin` password for full access
+- an optional separate `viewer` password for browse-only access
+- an optional `public` viewer mode for anonymous browsing with local favorites
 
 When enabled:
 
-- Foldergram stores a one-way password hash, salt, and session metadata in SQLite `app_settings`
+- Foldergram stores one-way password hashes, salts, and session metadata in SQLite `app_settings`
 - the browser unlocks access with a signed `HttpOnly` session cookie
-- `/api` routes require that session, except for `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/login`, and `POST /api/auth/logout`
-- generated media under `/thumbnails` and `/previews` also require that session
+- the session payload carries the current role (`admin` or `viewer`)
+- `/api` routes require that session, except for `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/login`, `POST /api/auth/unlock-admin`, and `POST /api/auth/logout`
+- generated media under `/thumbnails` and `/previews` also require that session unless public viewer mode is enabled
+- in `viewer_access_mode=public`, safe read routes and generated media can be browsed anonymously
+- anonymous public favorites stay in the browser and never write into SQLite likes
 - authenticated API and media responses are marked `Cache-Control: no-store` and `Vary: Cookie`
 - the production service worker skips caching protected thumbnail and preview responses
+- admin-only routes reject `viewer` and `anonymous` sessions with `403` or `401` depending on auth state
 
-Changing the password rotates the session version, which invalidates older
-sessions. Disabling password protection clears the stored auth settings.
+Changing either stored password or the viewer-access mode rotates the session
+version, which invalidates older sessions. Disabling password protection clears
+the stored auth settings.
 
 ## Mutation protection
 
@@ -64,11 +72,12 @@ browser-triggered mutations from untrusted origins.
 It is especially relevant for:
 
 - feed and folder reads when password protection is enabled
-- generated thumbnails and previews when password protection is enabled
+- generated thumbnails and previews when password protection is enabled and public mode is off
 - delete actions
 - like toggles
 - manual rescans
 - rebuild operations
+- Settings-only auth changes
 
 ## Path confinement
 
@@ -130,11 +139,12 @@ Foldergram does **not** currently provide:
 
 Use Foldergram like a local app:
 
-- use a strong shared password if you expose it on a homelab or LAN
+- use strong, different admin and viewer passwords if you expose it on a homelab or LAN
+- remember that public viewer mode exposes the library to anyone who can reach the app
 - keep it on loopback unless you know exactly how you are proxying and protecting it
 - terminate HTTPS upstream if the app is reachable off-box
 - remember that on plain HTTP, both the password and session cookie are visible to anyone who can sniff that local network traffic
-- do not assume the shared-password layer and mutation checks are a full internet-facing security boundary
+- do not assume the password layer and mutation checks are a full internet-facing security boundary
 - treat delete actions as destructive and permanent
 
 ## A precise caveat about headers

@@ -33,9 +33,9 @@ Foldergram indexes supported media from a configured `GALLERY_ROOT`, stores meta
 - A top rail that shows `Moments` when capture-date coverage is strong, or `Highlights` when it is not.
 - Library browsing with App Folder search, sorting, and delete actions.
 - App Folder pages with a posts grid and a `Reels` tab when videos exist.
-- Local likes stored in SQLite.
+- Shared likes in SQLite for signed-in admin/viewer sessions, plus browser-local favorites in public mode.
 - Image and video support with generated derivatives for fast browsing.
-- Optional shared-password protection for local and homelab access.
+- Optional role-based local access with admin, viewer, and public browse modes.
 - Settings actions for manual scan, thumbnail rebuild, and full library rebuild.
 - A web app manifest plus production service worker registration.
 - A debounced filesystem watcher in development mode only.
@@ -210,7 +210,18 @@ The shipped `.env.example` only includes the `DEV_*` port values. Docker uses th
 
 ### Access Protection
 
-Shared-password protection is configured from the Settings page, not from `.env`. When enabled, Foldergram stores a one-way password hash plus session metadata in SQLite and requires that password before serving protected API or media routes.
+Access protection is configured from the Settings page, not from `.env`.
+
+The current implementation supports:
+
+- `admin` sessions with full access
+- `viewer` sessions with shared likes but no Settings, Trash, scans, rebuilds, or delete actions
+- `anonymous` public sessions with browse-only access and browser-local favorites
+- `viewer_access_mode=off` for admin-only access
+- `viewer_access_mode=password` for a separate viewer password
+- `viewer_access_mode=public` for anonymous browsing plus admin unlock from `More`
+
+Foldergram stores one-way password hashes plus signed session metadata in SQLite. In public mode, anyone who can reach the app can browse immediately, favorites stay in the current browser only, and admins can elevate back into full access from `More` with the admin password.
 
 ### Public Demo Deployments
 

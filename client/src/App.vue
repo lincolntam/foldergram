@@ -17,6 +17,7 @@
       <ImageView :id="String(route.params.id ?? '')" modal @close="closeImageModal" />
     </div>
   </AppShell>
+  <AdminUnlockDialog v-if="authStore.unlockDialogOpen" />
 </template>
 
 <script setup lang="ts">
@@ -24,7 +25,9 @@ import { computed, nextTick, onUnmounted, watch } from 'vue';
 import { RouterView, useRoute, useRouter, type RouteLocationNormalizedLoaded } from 'vue-router';
 
 import AppShell from './components/AppShell.vue';
+import AdminUnlockDialog from './components/AdminUnlockDialog.vue';
 import AuthGate from './components/AuthGate.vue';
+import { canAccessRoute } from './router';
 import ImageView from './views/ImageView.vue';
 import { useAppStore } from './stores/app';
 import { useAuthStore } from './stores/auth';
@@ -102,11 +105,15 @@ function resetProtectedState() {
 }
 
 async function loadProtectedState(force = false) {
-  await Promise.all([
-    appStore.fetchStats(force ? { background: true } : {}),
-    foldersStore.fetchFolders(force),
-    likesStore.initialize(force)
-  ]);
+  const tasks: Array<Promise<unknown>> = [appStore.fetchStats(force ? { background: true } : {}), foldersStore.fetchFolders(force)];
+
+  if (authStore.canUseSavedItems) {
+    tasks.push(likesStore.initialize(force));
+  } else {
+    likesStore.resetForRebuild();
+  }
+
+  await Promise.all(tasks);
 }
 
 function lockModalScroll() {
@@ -175,16 +182,45 @@ watch(
 );
 
 watch(
-  () => authStore.accessGranted,
-  async (accessGranted, hadAccess) => {
+  () => [authStore.accessGranted, authStore.likesMode] as const,
+  async ([accessGranted, likesMode], previous) => {
+    const hadAccess = previous?.[0] ?? false;
+    const previousLikesMode = previous?.[1] ?? null;
+
     if (!accessGranted) {
       resetProtectedState();
       return;
     }
 
-    if (!hadAccess || !appStore.stats) {
+    if (!hadAccess || !appStore.stats || likesMode !== previousLikesMode) {
       await loadProtectedState(Boolean(hadAccess));
     }
+  },
+  {
+    immediate: true
+  }
+);
+
+watch(
+  () =>
+    [
+      route.fullPath,
+      authStore.ready,
+      authStore.capabilities.canAccessSettings,
+      authStore.capabilities.canDeleteMedia,
+      authStore.capabilities.canUseSharedLikes,
+      authStore.capabilities.canUseLocalFavorites
+    ] as const,
+  async () => {
+    if (!authStore.ready) {
+      return;
+    }
+
+    if (canAccessRoute(route)) {
+      return;
+    }
+
+    await router.replace({ name: 'home' });
   },
   {
     immediate: true

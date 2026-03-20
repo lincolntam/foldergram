@@ -29,13 +29,22 @@ media.
 
 ## Are likes shared with other users?
 
-No. Likes are local rows in SQLite for the current library.
+Admin and viewer sessions share SQLite likes for the current library.
+
+Anonymous public sessions do not write to SQLite likes. They use browser-local
+favorites only.
 
 ## Does Foldergram have authentication?
 
-It has optional shared-password protection for the whole app instance.
+It has optional role-based password protection for the app instance.
 
-It does **not** have multi-user accounts, roles, or per-user permissions.
+The current implementation supports:
+
+- an `admin` password with full access
+- an optional `viewer` password with browse-only access and shared likes
+- an optional `public` browse mode with anonymous local favorites and admin unlock
+
+It still does **not** have per-user accounts or per-user data isolation.
 
 ## Why does the API call posts "images" in some fields?
 
@@ -57,7 +66,7 @@ when the gallery root changed or the index itself needs to be reset.
 
 No. It is a separate trust check for browser-triggered mutations.
 
-Foldergram's optional shared-password protection is the auth layer; the
+Foldergram's optional admin/viewer/public access control is the auth layer; the
 local-origin mutation check is an additional safeguard around mutating routes.
 
 ## Does the app support remote multi-user access?
@@ -66,3 +75,11 @@ Not as a documented or hardened product target in the current repository.
 
 The intended scope is still a single-user or shared-household local deployment,
 not a full multi-user media portal.
+
+## Can anyone browse the app anonymously?
+
+Yes, if an admin enables `viewer_access_mode=public` from Settings.
+
+In that mode, visitors can browse immediately and keep favorites only in the
+current browser. Admin-only controls still require unlocking with the admin
+password.

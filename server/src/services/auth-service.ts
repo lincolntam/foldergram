@@ -6,26 +6,50 @@ import {
   AUTH_PASSWORD_HASH_SETTING_KEY,
   AUTH_PASSWORD_SALT_SETTING_KEY,
   AUTH_SESSION_SECRET_SETTING_KEY,
-  AUTH_SESSION_VERSION_SETTING_KEY
+  AUTH_SESSION_VERSION_SETTING_KEY,
+  AUTH_VIEWER_ACCESS_MODE_SETTING_KEY,
+  AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY,
+  AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY
 } from '../constants/app-setting-keys.js';
 import { appSettingsRepository } from '../db/repositories.js';
 
+export type AuthRole = 'admin' | 'viewer' | 'anonymous';
+export type SessionRole = Exclude<AuthRole, 'anonymous'>;
+export type ViewerAccessMode = 'off' | 'password' | 'public';
+export type LikesMode = 'shared' | 'local';
+
+export interface AuthCapabilities {
+  canManageLibrary: boolean;
+  canDeleteMedia: boolean;
+  canAccessSettings: boolean;
+  canUseSharedLikes: boolean;
+  canUseLocalFavorites: boolean;
+}
+
 interface AuthConfigSnapshot {
   enabled: boolean;
-  passwordHash: Buffer | null;
-  passwordSalt: Buffer | null;
+  adminPasswordHash: Buffer | null;
+  adminPasswordSalt: Buffer | null;
+  viewerPasswordHash: Buffer | null;
+  viewerPasswordSalt: Buffer | null;
   sessionSecret: Buffer | null;
   sessionVersion: number;
+  viewerAccessMode: ViewerAccessMode;
 }
 
 interface SessionPayload {
   exp: number;
+  role: SessionRole;
   sv: number;
 }
 
 export interface AuthStatus {
   enabled: boolean;
   authenticated: boolean;
+  role: AuthRole;
+  accessMode: ViewerAccessMode;
+  likesMode: LikesMode;
+  capabilities: AuthCapabilities;
 }
 
 export const AUTH_SESSION_COOKIE_NAME = 'foldergram_session';
@@ -56,19 +80,82 @@ function parseSessionVersion(value: string | null): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function loadAuthConfig(): AuthConfigSnapshot {
-  const passwordHash = decodeBase64Url(appSettingsRepository.get(AUTH_PASSWORD_HASH_SETTING_KEY));
-  const passwordSalt = decodeBase64Url(appSettingsRepository.get(AUTH_PASSWORD_SALT_SETTING_KEY));
-  const sessionSecret = decodeBase64Url(appSettingsRepository.get(AUTH_SESSION_SECRET_SETTING_KEY));
-  const sessionVersion = parseSessionVersion(appSettingsRepository.get(AUTH_SESSION_VERSION_SETTING_KEY));
-  const enabled = passwordHash !== null && passwordSalt !== null && sessionSecret !== null && sessionVersion > 0;
+function parseViewerAccessMode(value: string | null): ViewerAccessMode {
+  if (value === 'password' || value === 'public') {
+    return value;
+  }
+
+  return 'off';
+}
+
+function createCapabilities(role: AuthRole): AuthCapabilities {
+  if (role === 'admin') {
+    return {
+      canManageLibrary: true,
+      canDeleteMedia: true,
+      canAccessSettings: true,
+      canUseSharedLikes: true,
+      canUseLocalFavorites: false
+    };
+  }
+
+  if (role === 'viewer') {
+    return {
+      canManageLibrary: false,
+      canDeleteMedia: false,
+      canAccessSettings: false,
+      canUseSharedLikes: true,
+      canUseLocalFavorites: false
+    };
+  }
+
+  return {
+    canManageLibrary: false,
+    canDeleteMedia: false,
+    canAccessSettings: false,
+    canUseSharedLikes: false,
+    canUseLocalFavorites: true
+  };
+}
+
+function createStatus(role: AuthRole, authenticated: boolean, enabled: boolean, accessMode: ViewerAccessMode): AuthStatus {
+  const capabilities = authenticated ? createCapabilities(role) : createCapabilities('anonymous');
 
   return {
     enabled,
-    passwordHash: enabled ? passwordHash : null,
-    passwordSalt: enabled ? passwordSalt : null,
+    authenticated,
+    role,
+    accessMode,
+    likesMode: capabilities.canUseSharedLikes ? 'shared' : 'local',
+    capabilities
+  };
+}
+
+function loadAuthConfig(): AuthConfigSnapshot {
+  const adminPasswordHash = decodeBase64Url(appSettingsRepository.get(AUTH_PASSWORD_HASH_SETTING_KEY));
+  const adminPasswordSalt = decodeBase64Url(appSettingsRepository.get(AUTH_PASSWORD_SALT_SETTING_KEY));
+  const viewerPasswordHash = decodeBase64Url(appSettingsRepository.get(AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY));
+  const viewerPasswordSalt = decodeBase64Url(appSettingsRepository.get(AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY));
+  const sessionSecret = decodeBase64Url(appSettingsRepository.get(AUTH_SESSION_SECRET_SETTING_KEY));
+  const sessionVersion = parseSessionVersion(appSettingsRepository.get(AUTH_SESSION_VERSION_SETTING_KEY));
+  const enabled = adminPasswordHash !== null && adminPasswordSalt !== null && sessionSecret !== null && sessionVersion > 0;
+  const rawViewerAccessMode = parseViewerAccessMode(appSettingsRepository.get(AUTH_VIEWER_ACCESS_MODE_SETTING_KEY));
+  const viewerAccessMode =
+    enabled && rawViewerAccessMode === 'password' && viewerPasswordHash !== null && viewerPasswordSalt !== null
+      ? 'password'
+      : enabled && rawViewerAccessMode === 'public'
+        ? 'public'
+        : 'off';
+
+  return {
+    enabled,
+    adminPasswordHash: enabled ? adminPasswordHash : null,
+    adminPasswordSalt: enabled ? adminPasswordSalt : null,
+    viewerPasswordHash: viewerAccessMode === 'password' ? viewerPasswordHash : null,
+    viewerPasswordSalt: viewerAccessMode === 'password' ? viewerPasswordSalt : null,
     sessionSecret: enabled ? sessionSecret : null,
-    sessionVersion: enabled ? sessionVersion : 0
+    sessionVersion: enabled ? sessionVersion : 0,
+    viewerAccessMode
   };
 }
 
@@ -130,6 +217,7 @@ function parseSessionToken(token: string, secret: Buffer): SessionPayload | null
     if (
       typeof payload.exp !== 'number' ||
       !Number.isFinite(payload.exp) ||
+      (payload.role !== 'admin' && payload.role !== 'viewer') ||
       typeof payload.sv !== 'number' ||
       !Number.isInteger(payload.sv) ||
       payload.sv <= 0
@@ -139,6 +227,7 @@ function parseSessionToken(token: string, secret: Buffer): SessionPayload | null
 
     return {
       exp: payload.exp,
+      role: payload.role,
       sv: payload.sv
     };
   } catch {
@@ -166,11 +255,41 @@ function isSecureRequest(request: express.Request): boolean {
 
 let authConfig = loadAuthConfig();
 
-function createAuthenticatedStatus(): AuthStatus {
-  return {
-    enabled: authConfig.enabled,
-    authenticated: true
-  };
+function getAnonymousStatus(): AuthStatus {
+  return createStatus('anonymous', false, authConfig.enabled, authConfig.viewerAccessMode);
+}
+
+function createAuthenticatedStatus(role: SessionRole = 'admin'): AuthStatus {
+  return createStatus(role, true, authConfig.enabled, authConfig.viewerAccessMode);
+}
+
+function storeSessionConfig(nextSessionVersion: number): void {
+  const sessionSecret = randomBytes(32);
+  appSettingsRepository.set(AUTH_SESSION_SECRET_SETTING_KEY, sessionSecret.toString('base64url'));
+  appSettingsRepository.set(AUTH_SESSION_VERSION_SETTING_KEY, String(nextSessionVersion));
+}
+
+function getRequestSessionRole(request: express.Request): SessionRole | null {
+  if (!authConfig.enabled || !authConfig.sessionSecret) {
+    return 'admin';
+  }
+
+  const cookieHeader = request.get('cookie') ?? undefined;
+  const token = parseCookieValue(cookieHeader, AUTH_SESSION_COOKIE_NAME);
+  if (!token) {
+    return null;
+  }
+
+  const payload = parseSessionToken(token, authConfig.sessionSecret);
+  if (!payload) {
+    return null;
+  }
+
+  if (payload.exp <= Date.now()) {
+    return null;
+  }
+
+  return payload.sv === authConfig.sessionVersion ? payload.role : null;
 }
 
 export const authService = {
@@ -178,88 +297,143 @@ export const authService = {
     authConfig = loadAuthConfig();
   },
 
+  getViewerAccessMode(): ViewerAccessMode {
+    return authConfig.viewerAccessMode;
+  },
+
   isEnabled(): boolean {
     return authConfig.enabled;
   },
 
+  isPublicViewerAccessEnabled(): boolean {
+    return authConfig.enabled && authConfig.viewerAccessMode === 'public';
+  },
+
   getStatus(request: express.Request): AuthStatus {
     if (!authConfig.enabled) {
-      return {
-        enabled: false,
-        authenticated: true
-      };
+      return createStatus('admin', true, false, 'off');
     }
 
-    return {
-      enabled: true,
-      authenticated: this.isAuthenticatedRequest(request)
-    };
+    return this.getRequestAuthContext(request);
   },
 
   getLoggedOutStatus(): AuthStatus {
-    return authConfig.enabled
-      ? {
-          enabled: true,
-          authenticated: false
-        }
-      : {
-          enabled: false,
-          authenticated: true
-        };
+    return authConfig.enabled ? getAnonymousStatus() : createStatus('admin', true, false, 'off');
   },
 
-  getAuthenticatedStatus(): AuthStatus {
-    return createAuthenticatedStatus();
+  getAuthenticatedStatus(role: SessionRole = 'admin'): AuthStatus {
+    return createAuthenticatedStatus(role);
+  },
+
+  getRequestAuthContext(request: express.Request): AuthStatus {
+    if (!authConfig.enabled) {
+      return createStatus('admin', true, false, 'off');
+    }
+
+    const role = getRequestSessionRole(request);
+    return role ? createAuthenticatedStatus(role) : getAnonymousStatus();
   },
 
   isAuthenticatedRequest(request: express.Request): boolean {
-    if (!authConfig.enabled || !authConfig.sessionSecret) {
-      return true;
-    }
-
-    const cookieHeader = request.get('cookie') ?? undefined;
-    const token = parseCookieValue(cookieHeader, AUTH_SESSION_COOKIE_NAME);
-    if (!token) {
-      return false;
-    }
-
-    const payload = parseSessionToken(token, authConfig.sessionSecret);
-    if (!payload) {
-      return false;
-    }
-
-    if (payload.exp <= Date.now()) {
-      return false;
-    }
-
-    return payload.sv === authConfig.sessionVersion;
+    return this.getRequestAuthContext(request).authenticated;
   },
 
-  verifyPassword(password: string): boolean {
-    if (!authConfig.enabled || !authConfig.passwordHash || !authConfig.passwordSalt) {
+  hasCapability(request: express.Request, capability: keyof AuthCapabilities): boolean {
+    return this.getRequestAuthContext(request).capabilities[capability];
+  },
+
+  verifyAdminPassword(password: string): boolean {
+    if (!authConfig.enabled || !authConfig.adminPasswordHash || !authConfig.adminPasswordSalt) {
       return false;
     }
 
-    const expectedHash = hashPassword(password, authConfig.passwordSalt);
+    const expectedHash = hashPassword(password, authConfig.adminPasswordSalt);
     return (
-      expectedHash.length === authConfig.passwordHash.length &&
-      timingSafeEqual(expectedHash, authConfig.passwordHash)
+      expectedHash.length === authConfig.adminPasswordHash.length &&
+      timingSafeEqual(expectedHash, authConfig.adminPasswordHash)
     );
   },
 
-  setPassword(password: string): AuthStatus {
+  verifyViewerPassword(password: string): boolean {
+    if (authConfig.viewerAccessMode !== 'password' || !authConfig.viewerPasswordHash || !authConfig.viewerPasswordSalt) {
+      return false;
+    }
+
+    const expectedHash = hashPassword(password, authConfig.viewerPasswordSalt);
+    return (
+      expectedHash.length === authConfig.viewerPasswordHash.length &&
+      timingSafeEqual(expectedHash, authConfig.viewerPasswordHash)
+    );
+  },
+
+  authenticatePassword(password: string): SessionRole | null {
+    if (!authConfig.enabled) {
+      return null;
+    }
+
+    if (this.verifyAdminPassword(password)) {
+      return 'admin';
+    }
+
+    if (this.verifyViewerPassword(password)) {
+      return 'viewer';
+    }
+
+    return null;
+  },
+
+  setAdminPassword(password: string): AuthStatus {
+    if (authConfig.viewerAccessMode === 'password' && this.verifyViewerPassword(password)) {
+      throw new Error('Viewer password must be different from the admin password.');
+    }
+
     const salt = randomBytes(16);
-    const sessionSecret = randomBytes(32);
     const passwordHash = hashPassword(password, salt);
     const nextSessionVersion = Math.max(1, authConfig.sessionVersion + 1);
 
     appSettingsRepository.set(AUTH_PASSWORD_HASH_SETTING_KEY, passwordHash.toString('base64url'));
     appSettingsRepository.set(AUTH_PASSWORD_SALT_SETTING_KEY, salt.toString('base64url'));
-    appSettingsRepository.set(AUTH_SESSION_SECRET_SETTING_KEY, sessionSecret.toString('base64url'));
-    appSettingsRepository.set(AUTH_SESSION_VERSION_SETTING_KEY, String(nextSessionVersion));
+
+    if (!authConfig.enabled) {
+      appSettingsRepository.set(AUTH_VIEWER_ACCESS_MODE_SETTING_KEY, 'off');
+      appSettingsRepository.remove(AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY);
+      appSettingsRepository.remove(AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY);
+    }
+
+    storeSessionConfig(nextSessionVersion);
 
     this.refresh();
-    return createAuthenticatedStatus();
+    return createAuthenticatedStatus('admin');
+  },
+
+  setViewerAccess(mode: ViewerAccessMode, viewerPassword: string | null = null): AuthStatus {
+    if (!authConfig.enabled) {
+      throw new Error('Enable the admin password before configuring viewer access.');
+    }
+
+    if (mode === 'password') {
+      if (!viewerPassword) {
+        throw new Error('Viewer password is required when viewer access mode is password.');
+      }
+
+      if (this.verifyAdminPassword(viewerPassword)) {
+        throw new Error('Viewer password must be different from the admin password.');
+      }
+
+      const viewerSalt = randomBytes(16);
+      const viewerHash = hashPassword(viewerPassword, viewerSalt);
+      appSettingsRepository.set(AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY, viewerHash.toString('base64url'));
+      appSettingsRepository.set(AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY, viewerSalt.toString('base64url'));
+    } else {
+      appSettingsRepository.remove(AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY);
+      appSettingsRepository.remove(AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY);
+    }
+
+    appSettingsRepository.set(AUTH_VIEWER_ACCESS_MODE_SETTING_KEY, mode);
+    storeSessionConfig(Math.max(1, authConfig.sessionVersion + 1));
+
+    this.refresh();
+    return createAuthenticatedStatus('admin');
   },
 
   disable(): AuthStatus {
@@ -267,21 +441,22 @@ export const authService = {
     appSettingsRepository.remove(AUTH_PASSWORD_SALT_SETTING_KEY);
     appSettingsRepository.remove(AUTH_SESSION_SECRET_SETTING_KEY);
     appSettingsRepository.remove(AUTH_SESSION_VERSION_SETTING_KEY);
+    appSettingsRepository.remove(AUTH_VIEWER_ACCESS_MODE_SETTING_KEY);
+    appSettingsRepository.remove(AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY);
+    appSettingsRepository.remove(AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY);
 
     this.refresh();
-    return {
-      enabled: false,
-      authenticated: true
-    };
+    return createStatus('admin', true, false, 'off');
   },
 
-  setAuthenticatedSession(response: express.Response, request: express.Request): void {
+  setAuthenticatedSession(response: express.Response, request: express.Request, role: SessionRole = 'admin'): void {
     if (!authConfig.enabled || !authConfig.sessionSecret) {
       return;
     }
 
     const payload: SessionPayload = {
       exp: Date.now() + SESSION_DURATION_MS,
+      role,
       sv: authConfig.sessionVersion
     };
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');

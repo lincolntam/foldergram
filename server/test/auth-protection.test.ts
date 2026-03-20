@@ -55,6 +55,7 @@ describe.sequential('auth protection', () => {
   let authService: AuthServiceModule['authService'];
   let requireApiAuthentication: AuthProtectionModule['requireApiAuthentication'];
   let requireMediaAuthentication: AuthProtectionModule['requireMediaAuthentication'];
+  let requireCapability: AuthProtectionModule['requireCapability'];
   let AUTH_REQUIRED_HEADER: AuthProtectionModule['AUTH_REQUIRED_HEADER'];
 
   beforeAll(async () => {
@@ -74,7 +75,7 @@ describe.sequential('auth protection', () => {
 
     vi.resetModules();
     ({ authService } = await import('../src/services/auth-service.js'));
-    ({ requireApiAuthentication, requireMediaAuthentication, AUTH_REQUIRED_HEADER } = await import(
+    ({ requireApiAuthentication, requireMediaAuthentication, requireCapability, AUTH_REQUIRED_HEADER } = await import(
       '../src/middleware/auth-protection.js'
     ));
   });
@@ -93,16 +94,18 @@ describe.sequential('auth protection', () => {
     requireApiAuthentication(request, response as unknown as express.Response, next);
 
     expect(authService.isEnabled()).toBe(false);
-    expect(authService.getStatus(request)).toEqual({
+    expect(authService.getStatus(request)).toMatchObject({
       enabled: false,
-      authenticated: true
+      authenticated: true,
+      role: 'admin',
+      accessMode: 'off'
     });
     expect(next).toHaveBeenCalledOnce();
     expect(response.status).not.toHaveBeenCalled();
   });
 
   it('blocks protected API and media routes when password protection is enabled but the request has no session', () => {
-    authService.setPassword('password123');
+    authService.setAdminPassword('password123');
 
     const apiRequest = createRequest('GET', '/feed');
     const apiResponse = createResponse();
@@ -136,12 +139,13 @@ describe.sequential('auth protection', () => {
   });
 
   it('accepts a valid signed session cookie on protected requests', () => {
-    authService.setPassword('password123');
+    authService.setAdminPassword('password123');
 
     const loginResponse = createResponse();
     authService.setAuthenticatedSession(
       loginResponse as unknown as express.Response,
-      createRequest('POST', '/auth/login')
+      createRequest('POST', '/auth/login'),
+      'admin'
     );
 
     const authenticatedRequest = createRequest('GET', '/feed', {
@@ -153,12 +157,107 @@ describe.sequential('auth protection', () => {
     requireApiAuthentication(authenticatedRequest, authenticatedResponse as unknown as express.Response, next);
 
     expect(authService.isAuthenticatedRequest(authenticatedRequest)).toBe(true);
-    expect(authService.getStatus(authenticatedRequest)).toEqual({
+    expect(authService.getStatus(authenticatedRequest)).toMatchObject({
       enabled: true,
-      authenticated: true
+      authenticated: true,
+      role: 'admin'
     });
     expect(next).toHaveBeenCalledOnce();
     expect(authenticatedResponse.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(authenticatedResponse.setHeader).toHaveBeenCalledWith('Vary', 'Cookie');
+  });
+
+  it('accepts viewer sessions and blocks admin-only capabilities', () => {
+    authService.setAdminPassword('password123');
+    authService.setViewerAccess('password', 'viewer123');
+
+    const loginResponse = createResponse();
+    authService.setAuthenticatedSession(
+      loginResponse as unknown as express.Response,
+      createRequest('POST', '/auth/login'),
+      'viewer'
+    );
+
+    const viewerRequest = createRequest('POST', '/admin/rescan', {
+      cookie: extractCookieHeader(loginResponse)
+    });
+    const viewerResponse = createResponse();
+    const next = vi.fn();
+
+    requireCapability('canManageLibrary', 'Admin access is required.')(
+      viewerRequest,
+      viewerResponse as unknown as express.Response,
+      next
+    );
+
+    expect(authService.getStatus(viewerRequest)).toMatchObject({
+      enabled: true,
+      authenticated: true,
+      role: 'viewer',
+      capabilities: {
+        canManageLibrary: false,
+        canDeleteMedia: false,
+        canAccessSettings: false,
+        canUseSharedLikes: true
+      }
+    });
+    expect(next).not.toHaveBeenCalled();
+    expect(viewerResponse.status).toHaveBeenCalledWith(403);
+    expect(viewerResponse.json).toHaveBeenCalledWith({
+      message: 'Admin access is required.'
+    });
+  });
+
+  it('allows anonymous read access in public viewer mode but still blocks protected mutations', () => {
+    authService.setAdminPassword('password123');
+    authService.setViewerAccess('public');
+
+    const publicReadRequest = createRequest('GET', '/feed');
+    const publicReadResponse = createResponse();
+    const publicReadNext = vi.fn();
+
+    requireApiAuthentication(publicReadRequest, publicReadResponse as unknown as express.Response, publicReadNext);
+
+    expect(publicReadNext).toHaveBeenCalledOnce();
+    expect(authService.getStatus(publicReadRequest)).toMatchObject({
+      enabled: true,
+      authenticated: false,
+      role: 'anonymous',
+      accessMode: 'public',
+      likesMode: 'local'
+    });
+
+    const mediaRequest = createRequest('GET', '/thumbnails/example.webp');
+    const mediaResponse = createResponse();
+    const mediaNext = vi.fn();
+
+    requireMediaAuthentication(mediaRequest, mediaResponse as unknown as express.Response, mediaNext);
+
+    expect(mediaNext).toHaveBeenCalledOnce();
+    expect(mediaResponse.status).not.toHaveBeenCalled();
+
+    const mutationRequest = createRequest('POST', '/images/42/like');
+    const mutationResponse = createResponse();
+    const mutationNext = vi.fn();
+
+    requireApiAuthentication(mutationRequest, mutationResponse as unknown as express.Response, mutationNext);
+
+    expect(mutationNext).not.toHaveBeenCalled();
+    expect(mutationResponse.setHeader).toHaveBeenCalledWith(AUTH_REQUIRED_HEADER, '1');
+    expect(mutationResponse.status).toHaveBeenCalledWith(401);
+  });
+
+  it('keeps admin unlock reachable without an authenticated session', () => {
+    authService.setAdminPassword('password123');
+    authService.setViewerAccess('public');
+
+    const request = createRequest('POST', '/auth/unlock-admin');
+    const response = createResponse();
+    const next = vi.fn();
+
+    requireApiAuthentication(request, response as unknown as express.Response, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(response.status).not.toHaveBeenCalled();
   });
 });

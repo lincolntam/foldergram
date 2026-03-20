@@ -6,16 +6,64 @@ import {
   enablePasswordProtection,
   fetchAuthStatus,
   loginWithPassword,
+  unlockAdmin as unlockAdminSession,
+  updateViewerAccess,
   logout
 } from '../api/gallery';
-import type { AuthStatus } from '../types/api';
+import type { AuthCapabilities, AuthRole, AuthStatus, LikesMode, ViewerAccessMode } from '../types/api';
 
 interface AuthState {
   ready: boolean;
   loading: boolean;
+  unlockDialogOpen: boolean;
   enabled: boolean;
   authenticated: boolean;
+  role: AuthRole;
+  accessMode: ViewerAccessMode;
+  likesMode: LikesMode;
+  capabilities: AuthCapabilities;
   error: string | null;
+}
+
+function createCapabilities(role: AuthRole): AuthCapabilities {
+  if (role === 'admin') {
+    return {
+      canManageLibrary: true,
+      canDeleteMedia: true,
+      canAccessSettings: true,
+      canUseSharedLikes: true,
+      canUseLocalFavorites: false
+    };
+  }
+
+  if (role === 'viewer') {
+    return {
+      canManageLibrary: false,
+      canDeleteMedia: false,
+      canAccessSettings: false,
+      canUseSharedLikes: true,
+      canUseLocalFavorites: false
+    };
+  }
+
+  return {
+    canManageLibrary: false,
+    canDeleteMedia: false,
+    canAccessSettings: false,
+    canUseSharedLikes: false,
+    canUseLocalFavorites: true
+  };
+}
+
+function createAnonymousStatus(enabled: boolean, accessMode: ViewerAccessMode): AuthStatus {
+  return {
+    enabled,
+    authenticated: false,
+    role: 'anonymous',
+    accessMode,
+    likesMode: 'local',
+    capabilities: createCapabilities('anonymous')
+  };
 }
 
 async function clearAppCaches(): Promise<void> {
@@ -31,23 +79,53 @@ export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     ready: false,
     loading: false,
+    unlockDialogOpen: false,
     enabled: false,
     authenticated: true,
+    role: 'admin',
+    accessMode: 'off',
+    likesMode: 'shared',
+    capabilities: createCapabilities('admin'),
     error: null
   }),
   getters: {
-    accessGranted: (state) => !state.enabled || state.authenticated,
-    requiresLogin: (state) => state.enabled && !state.authenticated
+    accessGranted: (state) => !state.enabled || state.authenticated || state.accessMode === 'public',
+    requiresLogin: (state) => state.enabled && state.accessMode !== 'public' && !state.authenticated,
+    isAdmin: (state) => state.capabilities.canAccessSettings,
+    canManageLibrary: (state) => state.capabilities.canManageLibrary,
+    canDeleteMedia: (state) => state.capabilities.canDeleteMedia,
+    canAccessSettings: (state) => state.capabilities.canAccessSettings,
+    canUseSharedLikes: (state) => state.capabilities.canUseSharedLikes,
+    canUseLocalFavorites: (state) => state.capabilities.canUseLocalFavorites,
+    canUseSavedItems: (state) => state.capabilities.canUseSharedLikes || state.capabilities.canUseLocalFavorites,
+    canUnlockAdmin: (state) => state.enabled && !state.capabilities.canAccessSettings
   },
   actions: {
     applyStatus(status: AuthStatus) {
       this.enabled = status.enabled;
       this.authenticated = status.authenticated;
+      this.role = status.role;
+      this.accessMode = status.accessMode;
+      this.likesMode = status.likesMode;
+      this.capabilities = status.capabilities;
       this.ready = true;
     },
 
     clearError() {
       this.error = null;
+    },
+
+    openUnlockDialog() {
+      if (!this.enabled || this.capabilities.canAccessSettings) {
+        return;
+      }
+
+      this.unlockDialogOpen = true;
+      this.error = null;
+    },
+
+    closeUnlockDialog() {
+      this.unlockDialogOpen = false;
     },
 
     handleUnauthorized(message = 'Your session ended. Log in again.') {
@@ -57,8 +135,9 @@ export const useAuthStore = defineStore('auth', {
 
       this.ready = true;
       this.loading = false;
-      this.authenticated = false;
-      this.error = message;
+      this.applyStatus(createAnonymousStatus(this.enabled, this.accessMode));
+      this.unlockDialogOpen = false;
+      this.error = this.accessMode === 'public' ? null : message;
     },
 
     async initialize(force = false) {
@@ -91,6 +170,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const payload = await loginWithPassword(password);
         this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
         this.error = null;
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Unable to sign in.';
@@ -106,6 +186,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const payload = await logout();
         this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
         this.error = null;
         await clearAppCaches();
       } catch (error) {
@@ -122,6 +203,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const payload = await enablePasswordProtection(password);
         this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
         this.error = null;
         await clearAppCaches();
       } catch (error) {
@@ -138,6 +220,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const payload = await changePasswordProtection(currentPassword, password);
         this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
         this.error = null;
         await clearAppCaches();
       } catch (error) {
@@ -154,10 +237,45 @@ export const useAuthStore = defineStore('auth', {
       try {
         const payload = await disablePasswordProtection(currentPassword);
         this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
         this.error = null;
         await clearAppCaches();
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Unable to disable password protection.';
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async configureViewerAccess(mode: ViewerAccessMode, viewerPassword?: string) {
+      this.loading = true;
+
+      try {
+        const payload = await updateViewerAccess(mode, viewerPassword);
+        this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
+        this.error = null;
+        await clearAppCaches();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Unable to update viewer access.';
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async unlockAdmin(password: string) {
+      this.loading = true;
+
+      try {
+        const payload = await unlockAdminSession(password);
+        this.applyStatus(payload.auth);
+        this.unlockDialogOpen = false;
+        this.error = null;
+        await clearAppCaches();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Unable to unlock admin access.';
         throw error;
       } finally {
         this.loading = false;

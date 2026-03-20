@@ -27,7 +27,7 @@ features:
   - title: Photos and videos
     details: Foldergram indexes supported image and video formats, generates thumbnails, and creates previews or direct-playback links when videos already fit the playback budget.
   - title: Honest scope
-    details: The current app includes feed browsing, explore, library, likes, moments, settings, optional shared-password protection, and local maintenance controls without cloud sync or social features.
+    details: The current app includes feed browsing, explore, library, likes and favorites, moments, settings, optional admin/viewer/public access control, and local maintenance controls without cloud sync or social features.
 ---
 
 ## Foldergram at a Glance
@@ -36,7 +36,7 @@ features:
 
 <div class="cs-feature">
 <h3>What ships today</h3>
-<p>The current repository includes Home, Explore, Library, Likes, Moments, Settings, folder pages, a post detail view and modal flow, local likes, delete actions, optional shared-password protection, manual scans, full library rebuilds, and thumbnail-only rebuilds.</p>
+<p>The current repository includes Home, Explore, Library, Likes and Favorites, Moments, Settings, folder pages, a post detail view and modal flow, shared SQLite likes, browser-local favorites in public mode, delete actions, optional admin/viewer/public access control, manual scans, full library rebuilds, and thumbnail-only rebuilds.</p>
 </div>
 
 <div class="cs-feature">
@@ -87,7 +87,7 @@ features:
 
 <div class="cs-feature">
 <h3>6. Maintain the library locally</h3>
-<p>Settings includes optional shared-password protection plus manual scan, thumbnail rebuild, and full library rebuild actions so you can protect access and refresh the index without touching the source files by hand.</p>
+<p>Settings includes optional admin/viewer/public access control plus manual scan, thumbnail rebuild, and full library rebuild actions so you can protect access and refresh the index without touching the source files by hand.</p>
 </div>
 
 </div>

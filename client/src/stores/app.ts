@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia';
 
 import { fetchStats } from '../api/gallery';
-import type { AppStats } from '../types/api';
+import type { AppStatus } from '../types/api';
 
 interface AppState {
-  stats: AppStats | null;
+  stats: AppStatus | null;
   loadingStats: boolean;
   error: string | null;
   theme: 'light' | 'dark';
@@ -151,9 +151,6 @@ export const useAppStore = defineStore('app', {
         folders: 0,
         indexedImages: 0,
         indexedVideos: 0,
-        deletedImages: 0,
-        thumbnailCount: 0,
-        previewCount: 0,
         scan: {
           ...this.stats.scan,
           isScanning: true,
@@ -240,7 +237,6 @@ export const useAppStore = defineStore('app', {
       if (mediaType === 'video') {
         this.stats.indexedVideos = Math.max(0, this.stats.indexedVideos - 1);
       }
-      this.stats.deletedImages += 1;
     },
 
     removeFolder(deletedImageCount: number) {
@@ -250,7 +246,6 @@ export const useAppStore = defineStore('app', {
 
       this.stats.folders = Math.max(0, this.stats.folders - 1);
       this.stats.indexedImages = Math.max(0, this.stats.indexedImages - deletedImageCount);
-      this.stats.deletedImages += deletedImageCount;
     },
 
     async fetchStats(options: { background?: boolean } = {}) {

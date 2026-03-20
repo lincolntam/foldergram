@@ -97,10 +97,11 @@
       <div class="flex items-center justify-between gap-[0.65rem]">
         <div class="flex items-center gap-[0.65rem]">
           <button
+            v-if="authStore.canUseSavedItems"
             class="inline-flex items-center justify-center w-8 h-8 border-0 bg-transparent cursor-pointer transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-50 disabled:cursor-wait disabled:transform-none"
             :class="{ 'text-[#e5484d]': likesStore.isLiked(item.id) }"
             type="button"
-            :aria-label="likesStore.isLiked(item.id) ? 'Unlike post' : 'Like post'"
+            :aria-label="likesStore.toggleAriaLabel(likesStore.isLiked(item.id))"
             :aria-pressed="likesStore.isLiked(item.id)"
             :disabled="likesStore.isPending(item.id)"
             @click="handleLike"
@@ -188,6 +189,7 @@
           <span>Open original</span>
         </button>
         <button
+          v-if="authStore.canDeleteMedia"
           class="flex items-center gap-[0.8rem] w-full px-4 py-[0.95rem] border-0 border-b border-border text-[#d93025] bg-transparent cursor-pointer text-left disabled:opacity-70 disabled:cursor-wait"
           type="button"
           :disabled="deleting"
@@ -270,6 +272,7 @@ import { RouterLink, useRoute } from 'vue-router';
 
 import { deleteImage, trashImage } from '../api/gallery';
 import { useAppStore } from '../stores/app';
+import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
 import { useFoldersStore } from '../stores/folders';
 import { useLikesStore } from '../stores/likes';
@@ -308,6 +311,7 @@ const emit = defineEmits<{
 }>();
 
 const appStore = useAppStore();
+const authStore = useAuthStore();
 const feedStore = useFeedStore();
 const likesStore = useLikesStore();
 const foldersStore = useFoldersStore();
@@ -373,7 +377,7 @@ function queueHomeImageTapReset() {
 }
 
 async function likeFromMedia() {
-  if (likesStore.isLiked(props.item.id) || likesStore.isPending(props.item.id)) {
+  if (!authStore.canUseSavedItems || likesStore.isLiked(props.item.id) || likesStore.isPending(props.item.id)) {
     return;
   }
 
@@ -526,6 +530,10 @@ function openOriginal() {
 }
 
 function handleDelete() {
+  if (!authStore.canDeleteMedia) {
+    return;
+  }
+
   menuOpen.value = false;
   deleteOriginalFromDisk.value = false;
   deleteError.value = null;
@@ -533,10 +541,18 @@ function handleDelete() {
 }
 
 async function handleLike() {
+  if (!authStore.canUseSavedItems) {
+    return;
+  }
+
   await likesStore.toggleLike(props.item);
 }
 
 async function confirmDelete() {
+  if (!authStore.canDeleteMedia) {
+    return;
+  }
+
   deleting.value = true;
   deleteError.value = null;
 

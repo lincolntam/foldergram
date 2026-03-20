@@ -9,8 +9,12 @@ import FolderView from '../views/FolderView.vue';
 import MomentView from '../views/MomentView.vue';
 import TrashView from '../views/TrashView.vue';
 import { useAppStore } from '../stores/app';
+import { useAuthStore } from '../stores/auth';
 import { pinia } from '../stores/pinia';
 import SettingsView from '../views/SettingsView.vue';
+import type { AuthCapabilities } from '../types/api';
+
+type RouteCapability = keyof AuthCapabilities;
 
 function shouldPreserveModalScroll(to: RouteLocationNormalized, from: RouteLocationNormalized) {
   const appStore = useAppStore(pinia);
@@ -57,17 +61,26 @@ export const router = createRouter({
     {
       path: '/likes/posts',
       name: 'likes',
-      component: LikesView
+      component: LikesView,
+      meta: {
+        requiresSavedItems: true
+      }
     },
     {
       path: '/trash',
       name: 'trash',
-      component: TrashView
+      component: TrashView,
+      meta: {
+        requiredCapability: 'canDeleteMedia'
+      }
     },
     {
       path: '/settings',
       name: 'settings',
-      component: SettingsView
+      component: SettingsView,
+      meta: {
+        requiredCapability: 'canAccessSettings'
+      }
     },
     {
       path: '/moments/:id',
@@ -94,4 +107,37 @@ export const router = createRouter({
 
     return { top: 0 };
   }
+});
+
+export function getRouteRequiredCapability(route: Pick<RouteLocationNormalized, 'meta'>): RouteCapability | null {
+  const capability = route.meta.requiredCapability;
+  return typeof capability === 'string' ? (capability as RouteCapability) : null;
+}
+
+export function routeRequiresSavedItems(route: Pick<RouteLocationNormalized, 'meta'>): boolean {
+  return route.meta.requiresSavedItems === true;
+}
+
+export function canAccessRoute(route: Pick<RouteLocationNormalized, 'meta'>): boolean {
+  const authStore = useAuthStore(pinia);
+  const requiredCapability = getRouteRequiredCapability(route);
+
+  if (requiredCapability) {
+    return authStore.capabilities[requiredCapability];
+  }
+
+  if (routeRequiresSavedItems(route)) {
+    return authStore.canUseSavedItems;
+  }
+
+  return true;
+}
+
+router.beforeEach((to) => {
+  const authStore = useAuthStore(pinia);
+  if (!authStore.ready) {
+    return true;
+  }
+
+  return canAccessRoute(to) ? true : { name: 'home' };
 });

@@ -38,8 +38,8 @@ Instead:
 - Foldergram stores the password hash and session metadata in SQLite `app_settings`
 - deleting or replacing the SQLite database resets the configured password protection state
 
-The built-in auth model is a single shared password for one app instance, not a
-multi-user account system.
+The built-in auth model is a small role-based password gate for one app
+instance, not a multi-user account system.
 
 ## Path resolution rules
 
@@ -118,4 +118,7 @@ Foldergram marks the library as requiring a rebuild. Until that rebuild happens:
 - manual rescans return `409`
 - thumbnail rebuilds return `409`
 
-The current and previous gallery roots are exposed in `GET /api/admin/stats`.
+Viewer-safe shell status comes from `GET /api/status`.
+
+The current and previous gallery roots remain exposed only in
+`GET /api/admin/stats`.

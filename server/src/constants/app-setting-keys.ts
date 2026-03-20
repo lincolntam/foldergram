@@ -5,3 +5,6 @@ export const AUTH_PASSWORD_HASH_SETTING_KEY = 'auth.password_hash';
 export const AUTH_PASSWORD_SALT_SETTING_KEY = 'auth.password_salt';
 export const AUTH_SESSION_SECRET_SETTING_KEY = 'auth.session_secret';
 export const AUTH_SESSION_VERSION_SETTING_KEY = 'auth.session_version';
+export const AUTH_VIEWER_ACCESS_MODE_SETTING_KEY = 'auth.viewer_access_mode';
+export const AUTH_VIEWER_PASSWORD_HASH_SETTING_KEY = 'auth.viewer_password_hash';
+export const AUTH_VIEWER_PASSWORD_SALT_SETTING_KEY = 'auth.viewer_password_salt';

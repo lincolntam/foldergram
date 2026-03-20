@@ -73,7 +73,8 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 On first run, the server performs a startup scan when there is no existing index.
 
 If you plan to expose Foldergram on a homelab or LAN, open Settings after the
-first load and enable shared-password protection.
+first load and enable the admin password. From there, you can keep admin-only
+access, add a separate viewer password, or switch to public browse mode.
 
 ## Optional: run from source for development
 
@@ -124,6 +125,6 @@ pnpm build:docs
 - Feed, folder pages, likes, explore, and moments read from SQLite, not directly from disk.
 - Thumbnails are generated under `data/thumbnails`.
 - Previews are generated under `data/previews`.
-- Settings exposes shared-password protection, manual scan, thumbnail rebuild, and full library rebuild actions.
+- Settings exposes admin/viewer access controls, manual scan, thumbnail rebuild, and full library rebuild actions.
 
 If nothing appears, start with [Troubleshooting](/troubleshooting).
