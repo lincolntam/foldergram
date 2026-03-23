@@ -1,6 +1,10 @@
 export type FeedMode = 'recent' | 'rediscover' | 'random';
 export type FeedRailKind = 'moments' | 'highlights';
 
+export interface HomeFeedDefaultSetting {
+  defaultMode: FeedMode;
+}
+
 export interface FeedItem {
   id: number;
   folderId: number;
@@ -193,6 +197,9 @@ export interface AppStatus {
     rebuildRequired: boolean;
     reason: 'gallery_root_changed' | null;
     ignoredRootMediaCount: number;
+  };
+  preferences: {
+    defaultHomeFeedMode: FeedMode;
   };
 }
 

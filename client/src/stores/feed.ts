@@ -37,8 +37,8 @@ export const useFeedStore = defineStore('feed', {
     randomSeed: null
   }),
   actions: {
-    initializeMode() {
-      this.mode = 'random';
+    initializeMode(mode: FeedMode = 'random') {
+      this.mode = mode;
       this.randomSeed = null;
     },
 

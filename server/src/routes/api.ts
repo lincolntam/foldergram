@@ -36,8 +36,11 @@ const deleteFolderQuerySchema = z.object({
   }, z.boolean())
 });
 const feedQuerySchema = paginationQuerySchema.extend({
-  mode: z.enum(['recent', 'rediscover', 'random']).default('recent'),
+  mode: z.enum(['recent', 'rediscover', 'random']).default('random'),
   seed: z.coerce.number().int().nonnegative().optional()
+});
+const homeFeedDefaultBodySchema = z.object({
+  defaultMode: z.enum(['recent', 'rediscover', 'random'])
 });
 
 const slugSchema = z.object({
@@ -107,6 +110,10 @@ export const authRequestBodySchemas = {
   changePassword: changePasswordBodySchema,
   disablePassword: disablePasswordBodySchema,
   viewerAccess: viewerAccessBodySchema
+};
+
+export const settingsRequestBodySchemas = {
+  homeFeedDefault: homeFeedDefaultBodySchema
 };
 
 const authRateLimiter = createRateLimiter({
@@ -275,6 +282,15 @@ router.get('/feed', (request, response) => {
 router.get('/status', (_request, response) => {
   response.json(galleryService.getStatus());
 });
+
+router.put(
+  '/admin/settings/home-feed-default',
+  requireCapability('canAccessSettings', 'Admin access is required.'),
+  (request, response) => {
+    const body = homeFeedDefaultBodySchema.parse(request.body);
+    response.json(galleryService.setDefaultHomeFeedMode(body.defaultMode));
+  }
+);
 
 router.get('/feed/moments', (_request, response) => {
   response.json(galleryService.listMoments());

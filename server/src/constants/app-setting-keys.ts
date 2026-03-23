@@ -1,6 +1,7 @@
 export const LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY = 'scanner.last_successful_gallery_root';
 export const LIBRARY_REBUILD_REQUIRED_SETTING_KEY = 'scanner.library_rebuild_required';
 export const PREVIOUS_GALLERY_ROOT_SETTING_KEY = 'scanner.previous_gallery_root';
+export const HOME_FEED_DEFAULT_MODE_SETTING_KEY = 'feed.default_home_mode';
 export const AUTH_PASSWORD_HASH_SETTING_KEY = 'auth.password_hash';
 export const AUTH_PASSWORD_SALT_SETTING_KEY = 'auth.password_salt';
 export const AUTH_SESSION_SECRET_SETTING_KEY = 'auth.session_secret';

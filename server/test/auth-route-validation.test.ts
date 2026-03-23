@@ -9,6 +9,7 @@ type ApiModule = typeof import('../src/routes/api.js');
 describe.sequential('auth route validation', () => {
   let tempRoot = '';
   let authRequestBodySchemas: ApiModule['authRequestBodySchemas'];
+  let settingsRequestBodySchemas: ApiModule['settingsRequestBodySchemas'];
 
   beforeAll(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'insta-auth-route-validation-'));
@@ -26,7 +27,7 @@ describe.sequential('auth route validation', () => {
     await fs.mkdir(tempRoot, { recursive: true });
 
     vi.resetModules();
-    ({ authRequestBodySchemas } = await import('../src/routes/api.js'));
+    ({ authRequestBodySchemas, settingsRequestBodySchemas } = await import('../src/routes/api.js'));
   });
 
   afterAll(async () => {
@@ -76,6 +77,24 @@ describe.sequential('auth route validation', () => {
       })
     ).toEqual({
       mode: 'public'
+    });
+  });
+
+  it('rejects invalid home-feed default modes', () => {
+    expect(() =>
+      settingsRequestBodySchemas.homeFeedDefault.parse({
+        defaultMode: 'latest'
+      })
+    ).toThrowError();
+  });
+
+  it('accepts random as a valid home-feed default mode', () => {
+    expect(
+      settingsRequestBodySchemas.homeFeedDefault.parse({
+        defaultMode: 'random'
+      })
+    ).toEqual({
+      defaultMode: 'random'
     });
   });
 });

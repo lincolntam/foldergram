@@ -463,11 +463,15 @@ onMounted(async () => {
     window.addEventListener('resize', updateHomeLayout);
   }
 
+  if (!appStore.stats) {
+    await appStore.fetchStats().catch(() => {});
+  }
+
   if (appStore.isLibraryUnavailable) {
     return;
   }
 
-  feedStore.initializeMode();
+  feedStore.initializeMode(appStore.defaultHomeFeedMode);
   await Promise.all([feedStore.loadInitial(), momentsStore.fetchMoments()]);
 });
 

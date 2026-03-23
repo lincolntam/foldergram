@@ -3,6 +3,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  HOME_FEED_DEFAULT_MODE_SETTING_KEY,
   LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY,
   LIBRARY_REBUILD_REQUIRED_SETTING_KEY,
   PREVIOUS_GALLERY_ROOT_SETTING_KEY
@@ -72,6 +73,14 @@ function toViewerSafeScanSummary(scan: ScanSummaryRecord | null) {
 
 function buildViewerSafeStorageReason(libraryAvailable: boolean): string | null {
   return libraryAvailable ? null : 'Configured library storage is unavailable.';
+}
+
+function parseFeedMode(value: string | null): FeedMode {
+  return value === 'recent' || value === 'rediscover' || value === 'random' ? value : 'random';
+}
+
+function getDefaultHomeFeedMode(): FeedMode {
+  return parseFeedMode(appSettingsRepository.get(HOME_FEED_DEFAULT_MODE_SETTING_KEY));
 }
 
 function getThumbnailAssetVersion(): string | null {
@@ -602,7 +611,7 @@ function getSelectedFeedRail(now = new Date()) {
 }
 
 export const galleryService = {
-  getFeed(page: number, limit: number, mode: FeedMode = 'recent', randomSeed?: number) {
+  getFeed(page: number, limit: number, mode: FeedMode = 'random', randomSeed?: number) {
     if (!storageService.getState().libraryAvailable) {
       return {
         mode,
@@ -921,6 +930,7 @@ export const galleryService = {
     const storageState = storageService.getState();
     const scanProgress = scannerService.getProgress();
     const rebuildRequired = appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY) === '1';
+    const defaultHomeFeedMode = getDefaultHomeFeedMode();
 
     return {
       folders: storageState.libraryAvailable ? folderRepository.count() : 0,
@@ -939,6 +949,9 @@ export const galleryService = {
         rebuildRequired,
         reason: rebuildRequired ? 'gallery_root_changed' : null,
         ignoredRootMediaCount: storageState.libraryAvailable ? countSupportedRootMediaFiles(appConfig.galleryRoot) : 0
+      },
+      preferences: {
+        defaultHomeFeedMode
       }
     };
   },
@@ -951,6 +964,7 @@ export const galleryService = {
     const previousGalleryRoot = appSettingsRepository.get(PREVIOUS_GALLERY_ROOT_SETTING_KEY);
     const rebuildRequired = appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY) === '1';
     const lastSuccessfulGalleryRoot = appSettingsRepository.get(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY);
+    const defaultHomeFeedMode = getDefaultHomeFeedMode();
 
     return {
       folders: storageState.libraryAvailable ? folderRepository.count() : 0,
@@ -976,7 +990,18 @@ export const galleryService = {
         previousGalleryRoot,
         lastSuccessfulGalleryRoot,
         ignoredRootMediaCount: storageState.libraryAvailable ? countSupportedRootMediaFiles(currentGalleryRoot) : 0
+      },
+      preferences: {
+        defaultHomeFeedMode
       }
+    };
+  },
+
+  setDefaultHomeFeedMode(mode: FeedMode) {
+    appSettingsRepository.set(HOME_FEED_DEFAULT_MODE_SETTING_KEY, mode);
+
+    return {
+      defaultMode: mode
     };
   },
 

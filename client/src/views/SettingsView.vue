@@ -4,7 +4,7 @@
       <div>
         <span class="eyebrow">Settings</span>
         <h1 class="mt-[0.15rem] mb-0 text-[clamp(1.55rem,2.4vw,2rem)] font-medium tracking-[-0.04em]">Library Controls</h1>
-        <p class="m-0 text-muted">Manage access, run scans, or reset the library index.</p>
+        <p class="m-0 text-muted">Manage feed defaults, access, scans, and the library index.</p>
       </div>
     </header>
 
@@ -66,7 +66,7 @@
           <span class="w-[1.25rem] h-[1.25rem] shrink-0 mt-[0.1rem]" :class="currentCategory === 'library' ? 'i-fluent-folder-sync-20-filled' : 'i-fluent-folder-sync-20-regular'" aria-hidden="true"></span>
           <span class="flex flex-col gap-[0.1rem]">
             <span>Scan & Library</span>
-            <span class="text-[0.75rem] font-normal text-muted">Index media & build thumbnails</span>
+            <span class="text-[0.75rem] font-normal text-muted">Index media, rebuild derivatives, and set feed defaults</span>
           </span>
         </button>
         <button
@@ -351,6 +351,53 @@
 
         <!-- CATEGORY: LIBRARY -->
         <template v-if="currentCategory === 'library'">
+          <section class="card grid gap-[0.95rem] p-6">
+            <div class="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-start">
+              <div>
+                <h2 class="m-0 text-[1.18rem]">Home Feed Default</h2>
+                <p class="m-0 mt-[0.25rem] text-muted">Choose the first feed mode shown on Home.</p>
+              </div>
+              <span class="inline-flex items-center justify-center min-h-8 px-[0.7rem] py-[0.35rem] rounded-full text-[0.76rem] font-bold whitespace-nowrap text-accent-strong bg-[color-mix(in_srgb,var(--accent-soft)_78%,transparent_22%)]">
+                Current: {{ savedHomeFeedDefaultModeLabel }}
+              </span>
+            </div>
+
+            <div
+              v-if="homeFeedDefaultFeedback"
+              class="rounded-[0.95rem] px-4 py-3 text-[0.9rem]"
+              :class="homeFeedDefaultFeedback.tone === 'error' ? 'border border-[rgba(214,48,49,0.24)] text-[#c0392b] bg-[rgba(214,48,49,0.08)]' : 'border border-[rgba(24,119,242,0.2)] text-accent-strong bg-[rgba(24,119,242,0.08)]'"
+            >
+              {{ homeFeedDefaultFeedback.message }}
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 mt-1">
+              <label
+                v-for="mode in homeFeedDefaultOptions"
+                :key="mode.id"
+                class="flex min-w-0 items-start gap-[0.6rem] rounded-[0.85rem] border border-border px-3 py-[0.8rem] cursor-pointer"
+              >
+                <input
+                  v-model="homeFeedDefaultMode"
+                  class="mt-[0.2rem]"
+                  type="radio"
+                  :value="mode.id"
+                  :disabled="savingHomeFeedDefault || waitingForInitialStatus"
+                />
+                <span class="grid min-w-0 gap-[0.08rem]">
+                  <span class="text-[0.88rem] font-semibold text-text">{{ mode.label }}</span>
+                  <span class="overflow-hidden text-ellipsis whitespace-nowrap text-[0.75rem] text-muted">{{ mode.description }}</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="flex flex-col md:flex-row items-center gap-3 max-sm:items-stretch">
+              <p class="m-0 flex-1 text-muted">{{ homeFeedDefaultActionNote }}</p>
+              <button class="btn-primary min-w-[13rem]" type="button" :disabled="homeFeedDefaultSaveDisabled" @click="saveHomeFeedDefault">
+                {{ homeFeedDefaultButtonLabel }}
+              </button>
+            </div>
+          </section>
+
           <section class="card grid gap-[1.15rem] p-8">
             <div class="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-start">
               <div>
@@ -524,12 +571,12 @@
     />
   </section>
 </template>
-\n<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import ConfirmDialog from '../components/ConfirmDialog.vue';
-import { fetchAdminStats, triggerLibraryRebuild, triggerManualScan, triggerThumbnailRebuild } from '../api/gallery';
+import { fetchAdminStats, triggerLibraryRebuild, triggerManualScan, triggerThumbnailRebuild, updateHomeFeedDefault } from '../api/gallery';
 import { useAppStore } from '../stores/app';
 import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
@@ -537,7 +584,7 @@ import { useFoldersStore } from '../stores/folders';
 import { useLikesStore } from '../stores/likes';
 import { useMomentsStore } from '../stores/moments';
 import { useViewerStore } from '../stores/viewer';
-import type { AppStats, ViewerAccessMode } from '../types/api';
+import type { AppStats, FeedMode, ViewerAccessMode } from '../types/api';
 
 const appStore = useAppStore();
 const authStore = useAuthStore();
@@ -554,10 +601,12 @@ const thumbnailRebuildError = ref<string | null>(null);
 const requestingScan = ref(false);
 const rebuilding = ref(false);
 const rebuildingThumbnails = ref(false);
+const savingHomeFeedDefault = ref(false);
 const confirmRebuildOpen = ref(false);
 const confirmThumbnailRebuildOpen = ref(false);
 const authFeedback = ref<{ tone: 'success' | 'error'; message: string } | null>(null);
 const viewerFeedback = ref<{ tone: 'success' | 'error'; message: string } | null>(null);
+const homeFeedDefaultFeedback = ref<{ tone: 'success' | 'error'; message: string } | null>(null);
 const adminStats = ref<AppStats | null>(null);
 const showChangePasswordForm = ref(false);
 const showDisablePasswordForm = ref(false);
@@ -567,6 +616,7 @@ const currentPassword = ref('');
 const nextPassword = ref('');
 const nextPasswordConfirmation = ref('');
 const disablePassword = ref('');
+const homeFeedDefaultMode = ref<FeedMode>('random');
 const viewerAccessMode = ref<ViewerAccessMode>(authStore.accessMode);
 const viewerPassword = ref('');
 const viewerPasswordConfirmation = ref('');
@@ -637,6 +687,10 @@ function clearViewerFeedback() {
   authStore.clearError();
 }
 
+function clearHomeFeedDefaultFeedback() {
+  homeFeedDefaultFeedback.value = null;
+}
+
 function setAuthError(message: string) {
   authFeedback.value = {
     tone: 'error',
@@ -660,6 +714,20 @@ function setViewerError(message: string) {
 
 function setViewerSuccess(message: string) {
   viewerFeedback.value = {
+    tone: 'success',
+    message
+  };
+}
+
+function setHomeFeedDefaultError(message: string) {
+  homeFeedDefaultFeedback.value = {
+    tone: 'error',
+    message
+  };
+}
+
+function setHomeFeedDefaultSuccess(message: string) {
+  homeFeedDefaultFeedback.value = {
     tone: 'success',
     message
   };
@@ -708,6 +776,23 @@ function validatePasswordConfirmation(password: string, confirmation: string): s
 const scan = computed(() => appStore.stats?.scan ?? null);
 const lastCompletedScan = computed(() => scan.value?.lastCompletedScan ?? adminStats.value?.lastScan ?? null);
 const activeScanReason = computed(() => scan.value?.scanReason ?? null);
+const homeFeedDefaultOptions: Array<{ id: FeedMode; label: string; description: string }> = [
+  {
+    id: 'random',
+    label: 'Random',
+    description: 'Steady shuffle.'
+  },
+  {
+    id: 'recent',
+    label: 'Recent',
+    description: 'Newest first.'
+  },
+  {
+    id: 'rediscover',
+    label: 'Rediscover',
+    description: 'Bring older picks back.'
+  }
+];
 const isLibraryRebuildActive = computed(
   () => rebuilding.value || (appStore.isScanning && activeScanReason.value === 'rebuild')
 );
@@ -718,6 +803,32 @@ const isRebuildOperationActive = computed(() => isLibraryRebuildActive.value || 
 const scanProgressActive = computed(() => requestingScan.value || Boolean(scan.value?.isScanning && !isRebuildOperationActive.value));
 const highlightRebuildAction = computed(() => route.query.action === 'rebuild');
 const waitingForInitialStatus = computed(() => !appStore.stats || appStore.loadingStats);
+const savedHomeFeedDefaultMode = computed(() => appStore.defaultHomeFeedMode);
+const savedHomeFeedDefaultModeLabel = computed(
+  () => homeFeedDefaultOptions.find((mode) => mode.id === savedHomeFeedDefaultMode.value)?.label ?? 'Random'
+);
+const homeFeedDefaultDirty = computed(() => homeFeedDefaultMode.value !== savedHomeFeedDefaultMode.value);
+const homeFeedDefaultSaveDisabled = computed(
+  () => waitingForInitialStatus.value || savingHomeFeedDefault.value || !homeFeedDefaultDirty.value
+);
+const homeFeedDefaultButtonLabel = computed(() => {
+  if (savingHomeFeedDefault.value) {
+    return 'Saving...';
+  }
+
+  return homeFeedDefaultDirty.value ? 'Save Home Feed Default' : 'Saved';
+});
+const homeFeedDefaultActionNote = computed(() => {
+  if (waitingForInitialStatus.value) {
+    return 'Loading the current app preference...';
+  }
+
+  if (homeFeedDefaultDirty.value) {
+    return 'This updates the first feed mode shown on Home for this app. Visitors can still switch modes from the homepage.';
+  }
+
+  return 'This is the current app-wide default for the homepage feed.';
+});
 const scanActionDisabled = computed(
   () =>
     waitingForInitialStatus.value ||
@@ -1239,6 +1350,31 @@ async function signOut() {
   }
 }
 
+async function saveHomeFeedDefault() {
+  if (homeFeedDefaultSaveDisabled.value) {
+    return;
+  }
+
+  savingHomeFeedDefault.value = true;
+  clearHomeFeedDefaultFeedback();
+
+  try {
+    const payload = await updateHomeFeedDefault(homeFeedDefaultMode.value);
+    if (appStore.stats) {
+      appStore.stats.preferences.defaultHomeFeedMode = payload.defaultMode;
+    }
+    await appStore.fetchStats({ background: true });
+    homeFeedDefaultMode.value = payload.defaultMode;
+    setHomeFeedDefaultSuccess(
+      `The homepage now opens with ${homeFeedDefaultOptions.find((mode) => mode.id === payload.defaultMode)?.label ?? 'Random'}.`
+    );
+  } catch (error) {
+    setHomeFeedDefaultError(error instanceof Error ? error.message : 'Unable to update the home feed default.');
+  } finally {
+    savingHomeFeedDefault.value = false;
+  }
+}
+
 async function warmScanStatus() {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await wait(attempt === 0 ? 150 : 250);
@@ -1352,8 +1488,21 @@ onMounted(async () => {
     await appStore.fetchStats();
   }
 
+  homeFeedDefaultMode.value = appStore.defaultHomeFeedMode;
   await loadAdminStats().catch(() => {});
 });
+
+watch(
+  () => savedHomeFeedDefaultMode.value,
+  (mode) => {
+    if (!homeFeedDefaultDirty.value || savingHomeFeedDefault.value) {
+      homeFeedDefaultMode.value = mode;
+    }
+  },
+  {
+    immediate: true
+  }
+);
 
 watch(
   () => authStore.enabled,

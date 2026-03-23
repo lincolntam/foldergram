@@ -3,6 +3,7 @@ import type {
   AppStats,
   AuthMutationResult,
   AuthStatus,
+  HomeFeedDefaultSetting,
   ViewerAccessMode,
   DeleteImageResult,
   DeleteFolderResult,
@@ -24,7 +25,7 @@ import type {
 } from '../types/api';
 import { requestJson } from './http';
 
-export function fetchFeed(page = 1, limit = 24, mode: FeedMode = 'recent', seed?: number) {
+export function fetchFeed(page = 1, limit = 24, mode: FeedMode = 'random', seed?: number) {
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit),
@@ -240,5 +241,13 @@ export function triggerLibraryRebuild() {
 export function triggerThumbnailRebuild() {
   return requestJson<RebuildThumbnailsResult>('/api/admin/rebuild-thumbnails', {
     method: 'POST'
+  });
+}
+
+export function updateHomeFeedDefault(defaultMode: FeedMode) {
+  return requestJson<HomeFeedDefaultSetting>('/api/admin/settings/home-feed-default', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ defaultMode })
   });
 }
