@@ -10,6 +10,8 @@ interface ViewerState {
   error: string | null;
 }
 
+let viewerLoadToken = 0;
+
 export const useViewerStore = defineStore('viewer', {
   state: (): ViewerState => ({
     image: null,
@@ -19,6 +21,7 @@ export const useViewerStore = defineStore('viewer', {
   }),
   actions: {
     reset() {
+      viewerLoadToken += 1;
       this.image = null;
       this.loading = false;
       this.deleting = false;
@@ -26,16 +29,28 @@ export const useViewerStore = defineStore('viewer', {
     },
 
     async loadImage(id: number, mediaType?: 'image' | 'video') {
+      const requestToken = ++viewerLoadToken;
       this.loading = true;
       this.error = null;
-      this.image = null;
 
       try {
-        this.image = await fetchImage(id, mediaType);
+        const image = await fetchImage(id, mediaType);
+        if (requestToken !== viewerLoadToken) {
+          return;
+        }
+
+        this.image = image;
       } catch (error) {
+        if (requestToken !== viewerLoadToken) {
+          return;
+        }
+
+        this.image = null;
         this.error = error instanceof Error ? error.message : 'Unable to load post';
       } finally {
-        this.loading = false;
+        if (requestToken === viewerLoadToken) {
+          this.loading = false;
+        }
       }
     },
 

@@ -1,11 +1,8 @@
 <template>
-  <div :class="modal ? 'w-[min(100%,72rem)]' : 'w-[min(100%,72rem)] mx-auto'" @click.stop>
+  <div :class="modal ? 'image-view image-view--modal' : 'image-view image-view--page'" @click.stop>
     <ErrorState v-if="viewerStore.error" title="Could not load post" :message="viewerStore.error" />
-    <div v-else-if="viewerStore.loading" class="card p-8 text-center">
-      <p class="text-muted">Loading post...</p>
-    </div>
     <ImageModal
-      v-else
+      v-else-if="viewerStore.image"
       :image="viewerStore.image"
       :folder="folder"
       :is-modal="modal"
@@ -13,6 +10,9 @@
       @close="emit('close')"
       @delete="openDeleteDialog"
     />
+    <div v-else-if="viewerStore.loading" class="card p-8 text-center">
+      <p class="text-muted">Loading post...</p>
+    </div>
     <ConfirmDialog
       v-if="confirmDeleteOpen"
       title="Delete this post?"
@@ -151,3 +151,21 @@ async function handleDelete() {
   }
 }
 </script>
+
+<style scoped>
+.image-view {
+  width: min(100%, 72rem);
+}
+
+.image-view--modal {
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+}
+
+.image-view--page {
+  margin: 0 auto;
+}
+</style>

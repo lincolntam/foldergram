@@ -7,13 +7,13 @@
     <!-- Close button (modal only) -->
     <button
       v-if="isModal"
-      class="fixed top-[0.6rem] right-[0.6rem] z-55 inline-flex items-center justify-center w-[3rem] h-[3rem] p-0 border-0 text-white/85 bg-transparent cursor-pointer transition-opacity duration-150 hover:text-white"
+      class="viewer__modal-close"
       type="button"
       aria-label="Close post"
       @click="$emit('close')"
     >
       <svg
-        class="w-8 h-8"
+        class="viewer__modal-close-icon"
         viewBox="0 0 24 24"
         role="presentation"
       >
@@ -96,16 +96,21 @@
       @click="toggleSidebar"
     >
       <span
-        class="i-fluent-panel-left-expand-16-filled w-8 h-8"
+        :class="
+          isSidebarExpanded
+            ? 'i-fluent-panel-left-contract-16-filled'
+            : 'i-fluent-panel-left-expand-16-filled'
+        "
+        class="viewer__sidebar-toggle-icon"
         aria-hidden="true"
       />
     </button>
 
     <!-- Card -->
-    <div
-      ref="cardWrapperElement"
-      :class="[
-        'card viewer__card-wrapper',
+      <div
+        ref="cardWrapperElement"
+        :class="[
+          'card viewer__card-wrapper',
         {
           'viewer__card-wrapper--modal': isModal,
           'viewer__card-wrapper--compact': isModalSidebarCollapsible,
@@ -119,19 +124,25 @@
           {
             'viewer__media--modal': isModal,
             'viewer__media--page': !isModal,
+            'viewer__media--swipe-enabled': isModal,
           },
         ]"
+        @pointercancel="handleMediaPointercancel"
+        @pointerdown="handleMediaPointerdown"
+        @pointermove="handleMediaPointermove"
+        @pointerup="handleMediaPointerup"
       >
         <template v-if="image.mediaType === 'video'">
           <div
-            class="viewer__video-shell"
-            :style="videoShellStyle"
+            class="viewer__media-shell viewer__media-shell--video"
+            :style="mediaShellStyle"
           >
             <media-player
               ref="playerElement"
               class="viewer__player"
               :src.prop="videoSource"
               :title.prop="image.filename"
+              :fullscreenOrientation.prop="'none'"
               :playsInline.prop="true"
               :muted.prop="appStore.videoMuted"
               :loop.prop="true"
@@ -144,7 +155,7 @@
                 :src.prop="image.thumbnailUrl"
                 :alt.prop="image.filename"
               />
-              <media-controls class="viewer__player-controls">
+              <media-controls class="viewer__player-controls" data-swipe-ignore="true">
                 <media-controls-group class="viewer__player-controls-group">
                   <media-play-button
                     class="viewer__player-control"
@@ -201,6 +212,7 @@
                   <media-fullscreen-button
                     class="viewer__player-control"
                     aria-label="Toggle fullscreen"
+                    target="media"
                   >
                     <span
                       class="viewer__player-control-icon viewer__player-fullscreen-icon viewer__player-fullscreen-icon--enter i-fluent-full-screen-maximize-16-regular"
@@ -216,15 +228,21 @@
             </media-player>
           </div>
         </template>
-        <ResilientImage
+        <div
           v-else
-          :src="image.previewUrl"
-          :alt="image.filename"
-          :width="image.width"
-          :height="image.height"
-          loading="eager"
-          :retry-while="appStore.isScanning"
-        />
+          class="viewer__media-shell viewer__media-shell--image"
+          :style="mediaShellStyle"
+        >
+          <ResilientImage
+            class="viewer__media-image"
+            :src="image.previewUrl"
+            :alt="image.filename"
+            :width="image.width"
+            :height="image.height"
+            loading="eager"
+            :retry-while="appStore.isScanning"
+          />
+        </div>
       </div>
 
       <button
@@ -232,7 +250,7 @@
         class="viewer__drawer-backdrop"
         type="button"
         aria-label="Hide post details"
-        @click="closeSidebar"
+        @click="handleSidebarBackdropClick"
       />
 
       <!-- Sidebar -->
@@ -245,17 +263,29 @@
             'viewer__sidebar--drawer': isModalSidebarCollapsible,
             'viewer__sidebar--drawer-open':
               isModalSidebarCollapsible && isSidebarExpanded,
+            'viewer__sidebar--dragging': isSidebarSheetDragging,
           },
         ]"
+        :style="sidebarSheetStyle"
         :aria-hidden="isModalSidebarCollapsible && !isSidebarExpanded"
         :inert="isModalSidebarCollapsible && !isSidebarExpanded"
+        @pointercancel="handleSidebarSheetPointercancel"
+        @pointerdown="handleSidebarSheetPointerdown"
+        @pointermove="handleSidebarSheetPointermove"
+        @pointerup="handleSidebarSheetPointerup"
       >
+        <div
+          v-if="isModalSidebarCollapsible"
+          class="viewer__sidebar-handle"
+          aria-hidden="true"
+        />
+
         <!-- Header -->
         <div
-          class="flex items-center justify-between gap-4 border-b border-border px-5 pt-[1.1rem] pb-4"
+          class="viewer__sidebar-header flex items-center justify-between gap-4 border-b border-border px-5 pt-[1.1rem] pb-4"
         >
           <RouterLink
-            class="flex items-center gap-[0.85rem] min-w-0"
+            class="viewer__sidebar-folder-link flex items-center gap-[0.85rem] min-w-0"
             :to="{ name: 'folder', params: { slug: image.folderSlug } }"
             aria-label="Open folder"
           >
@@ -264,11 +294,11 @@
               :name="image.folderName"
               :src="folderAvatar"
             />
-            <div class="min-w-0">
-              <h2 class="m-0 text-[0.9rem] font-semibold truncate">
+            <div class="viewer__sidebar-folder-meta min-w-0">
+              <h2 class="viewer__sidebar-title m-0 text-[0.9rem] font-semibold truncate">
                 {{ image.folderName }}
               </h2>
-              <p class="m-0 text-muted truncate">
+              <p class="viewer__sidebar-breadcrumb m-0 text-muted truncate">
                 {{
                   folder?.breadcrumb ??
                   image.folderBreadcrumb ??
@@ -277,39 +307,35 @@
               </p>
             </div>
           </RouterLink>
-          <span class="text-muted text-[0.78rem] whitespace-nowrap">{{
+          <span class="viewer__sidebar-date text-muted text-[0.78rem] whitespace-nowrap">{{
             formattedDate
           }}</span>
         </div>
 
         <!-- Description -->
-        <div class="grid gap-[0.3rem] px-5 pt-[1.1rem]">
-          <p class="m-0 text-text">
+        <div class="viewer__sidebar-summary grid gap-[0.3rem] px-5 pt-[1.1rem]">
+          <p class="viewer__sidebar-caption m-0 text-text">
             <strong class="mr-[0.35rem]">{{ image.folderName }}</strong>
             {{ readableFilename }}
           </p>
-          <p class="m-0 text-muted">{{ image.relativePath }}</p>
+          <p class="viewer__sidebar-path m-0 text-muted">{{ image.relativePath }}</p>
         </div>
 
-        <!-- Meta -->
-        <dl class="grid gap-[0.9rem] m-0 px-5 pt-[0.35rem]">
-          <div>
-            <dt
-              class="text-muted text-[0.75rem] mb-[0.25rem] uppercase tracking-[0.05em]"
-            >
+        <!-- Quick stats -->
+        <dl class="viewer__sidebar-stats m-0 px-5 pt-[0.9rem]">
+          <div class="viewer__sidebar-stat">
+            <dt class="viewer__sidebar-stat-label">
               Dimensions
             </dt>
-            <dd class="m-0 text-[0.96rem] font-semibold">
+            <dd class="viewer__sidebar-stat-value m-0 text-[0.96rem] font-semibold">
               {{ image.width }} × {{ image.height }}
             </dd>
           </div>
-          <div>
-            <dt
-              class="text-muted text-[0.75rem] mb-[0.25rem] uppercase tracking-[0.05em]"
-            >
+          <div class="viewer__sidebar-stat">
+            <dt class="viewer__sidebar-stat-label">
               Type
             </dt>
-            <dd class="m-0 text-[0.96rem] font-semibold">
+            <dd class="viewer__sidebar-stat-value m-0 text-[0.96rem] font-semibold">
               {{
                 image.mediaType === "video"
                   ? `Video (${image.mimeType})`
@@ -317,34 +343,39 @@
               }}
             </dd>
           </div>
-          <div v-if="image.durationMs">
-            <dt
-              class="text-muted text-[0.75rem] mb-[0.25rem] uppercase tracking-[0.05em]"
-            >
+          <div
+            v-if="image.durationMs"
+            class="viewer__sidebar-stat"
+          >
+            <dt class="viewer__sidebar-stat-label">
               Duration
             </dt>
-            <dd class="m-0 text-[0.96rem] font-semibold">
+            <dd class="viewer__sidebar-stat-value m-0 text-[0.96rem] font-semibold">
               {{ formattedDuration }}
             </dd>
           </div>
-          <div>
-            <dt
-              class="text-muted text-[0.75rem] mb-[0.25rem] uppercase tracking-[0.05em]"
-            >
+          <div class="viewer__sidebar-stat">
+            <dt class="viewer__sidebar-stat-label">
               Size
             </dt>
-            <dd class="m-0 text-[0.96rem] font-semibold">{{ fileSize }}</dd>
+            <dd class="viewer__sidebar-stat-value m-0 text-[0.96rem] font-semibold">{{ fileSize }}</dd>
           </div>
+        </dl>
+
+        <!-- Metadata -->
+        <dl
+          v-if="exifDetails.length > 0"
+          class="viewer__sidebar-metadata m-0 px-5 pt-[0.75rem]"
+        >
           <div
             v-for="detail in exifDetails"
             :key="detail.label"
+            class="viewer__sidebar-metadata-item"
           >
-            <dt
-              class="text-muted text-[0.75rem] mb-[0.25rem] uppercase tracking-[0.05em]"
-            >
+            <dt class="viewer__sidebar-metadata-label">
               {{ detail.label }}
             </dt>
-            <dd class="m-0 text-[0.96rem] font-semibold break-words">
+            <dd class="viewer__sidebar-metadata-value m-0 text-[0.96rem] font-semibold break-words">
               {{ detail.value }}
             </dd>
           </div>
@@ -352,12 +383,12 @@
 
         <!-- Actions -->
         <div
-          class="flex items-center justify-between gap-4 px-5 pt-[0.7rem] pb-5 mt-auto"
+          class="viewer__sidebar-actions flex items-center justify-between gap-4 px-5 pt-[0.7rem] pb-5 mt-auto"
         >
           <!-- Like -->
           <button
             v-if="authStore.canUseSavedItems"
-            class="inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer transition-[opacity,transform,color] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
+            class="viewer__sidebar-action inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer transition-[opacity,transform,color] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
             :class="{ 'text-[#e5484d]': likesStore.isLiked(image.id) }"
             type="button"
             :aria-label="likesStore.toggleAriaLabel(likesStore.isLiked(image.id))"
@@ -376,11 +407,11 @@
             />
           </button>
 
-          <div class="flex items-center gap-4">
+          <div class="viewer__sidebar-actions-group flex items-center gap-4">
             <!-- Set as cover -->
             <button
               v-if="authStore.canManageLibrary && image.mediaType === 'image'"
-              class="inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-text transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
+              class="viewer__sidebar-action inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-text transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
               type="button"
               aria-label="Set as folder cover"
               title="Set as folder cover"
@@ -391,7 +422,7 @@
             </button>
             <!-- Open original -->
             <a
-              class="inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-text transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px"
+              class="viewer__sidebar-action inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-text transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px"
               :href="image.originalUrl"
               target="_blank"
               rel="noreferrer"
@@ -431,7 +462,7 @@
             <!-- Delete -->
             <button
               v-if="authStore.canDeleteMedia"
-              class="inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-[#d93025] transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
+              class="viewer__sidebar-action inline-flex items-center justify-center p-0 border-0 bg-transparent cursor-pointer text-[#d93025] transition-[opacity,transform] duration-180 hover:opacity-72 hover:-translate-y-px disabled:opacity-45 disabled:cursor-wait disabled:transform-none"
               type="button"
               aria-label="Delete post"
               :disabled="deleting"
@@ -466,6 +497,7 @@
   import type { PlayerSrc } from "vidstack"
   import type { MediaPlayerElement } from "vidstack/elements"
 
+  import { useHorizontalSwipe } from "../composables/useHorizontalSwipe"
   import type { ImageDetail, FolderSummary } from "../types/api"
   import { useAppStore } from "../stores/app"
   import { useAuthStore } from "../stores/auth"
@@ -501,12 +533,18 @@
   const navigationLockedUntil = ref(0)
   const isSidebarCollapsible = ref(false)
   const isSidebarExpanded = ref(true)
+  const isSidebarSheetDragging = ref(false)
   const isPlayingHd = ref(false)
+  const sidebarSheetDragOffset = ref(0)
   const settingCover = ref(false)
 
   const WHEEL_NAVIGATION_THRESHOLD = 72
   const NAVIGATION_COOLDOWN_MS = 320
   const MODAL_SIDEBAR_COLLAPSE_BREAKPOINT = 960
+  const SHEET_SWIPE_MIN_DISTANCE = 56
+  const SHEET_SWIPE_MAX_HORIZONTAL_DISTANCE = 96
+  const SHEET_SWIPE_MIN_VERTICAL_RATIO = 1.15
+  const SHEET_MAX_DRAG_OFFSET = 240
 
   type MetadataDetail = {
     label: string
@@ -516,6 +554,15 @@
   let videoMuteSyncToken = 0
   let pendingVideoRestore: { currentTime: number; wasPaused: boolean } | null = null
   let removePlayerEventListeners: (() => void) | null = null
+  let sidebarSheetPointerId: number | null = null
+  let sidebarSheetCapturedElement: Element | null = null
+  let sidebarSheetStartX = 0
+  let sidebarSheetStartY = 0
+  let sidebarSheetStartScrollTop = 0
+  let mediaSheetRevealPointerId: number | null = null
+  let mediaSheetRevealCapturedElement: Element | null = null
+  let mediaSheetRevealStartX = 0
+  let mediaSheetRevealStartY = 0
 
   const fileSize = computed(() => {
     if (!props.image) {
@@ -554,8 +601,8 @@
       type: "video/mp4",
     }
   })
-  const videoShellStyle = computed(() => {
-    if (!props.image || props.image.mediaType !== "video") {
+  const mediaShellStyle = computed(() => {
+    if (!props.image) {
       return undefined
     }
 
@@ -690,6 +737,25 @@
   const isModalSidebarOverlayVisible = computed(
     () => isModalSidebarCollapsible.value && isSidebarExpanded.value,
   )
+  const sidebarSheetStyle = computed(() =>
+    isModalSidebarCollapsible.value
+      ? {
+          "--viewer-sidebar-drag-offset": `${sidebarSheetDragOffset.value}px`,
+        }
+      : undefined,
+  )
+  const swipeNavigation = useHorizontalSwipe({
+    canStart: canStartSwipeNavigation,
+    isEnabled: () => props.isModal === true && props.image !== null,
+    onSwipeLeft: () => {
+      wheelDeltaAccumulator.value = 0
+      void navigateByDirection("next")
+    },
+    onSwipeRight: () => {
+      wheelDeltaAccumulator.value = 0
+      void navigateByDirection("previous")
+    },
+  })
 
   function syncVideoMuted(player: MediaPlayerElement, muted: boolean) {
     const token = ++videoMuteSyncToken
@@ -810,7 +876,70 @@
     })
   }
 
+  function releaseCapturedPointer(
+    capturedElement: Element | null,
+    pointerId: number | null,
+  ) {
+    if (!capturedElement || pointerId === null || !("releasePointerCapture" in capturedElement)) {
+      return
+    }
+
+    try {
+      capturedElement.releasePointerCapture(pointerId)
+    } catch {
+      // Ignore failures if the pointer has already been released.
+    }
+  }
+
+  function isGestureIgnoredTarget(target: EventTarget | null) {
+    if (!(target instanceof Element)) {
+      return false
+    }
+
+    return Boolean(
+      target.closest(
+        [
+          '[data-swipe-ignore="true"]',
+          '[data-sheet-swipe-ignore="true"]',
+          "button",
+          "a",
+          "input",
+          "select",
+          "textarea",
+          "label",
+          '[role="button"]',
+          '[role="link"]',
+        ].join(", "),
+      ),
+    )
+  }
+
+  function resetSidebarSheetGesture() {
+    releaseCapturedPointer(sidebarSheetCapturedElement, sidebarSheetPointerId)
+    sidebarSheetPointerId = null
+    sidebarSheetCapturedElement = null
+    sidebarSheetStartX = 0
+    sidebarSheetStartY = 0
+    sidebarSheetStartScrollTop = 0
+    sidebarSheetDragOffset.value = 0
+    isSidebarSheetDragging.value = false
+  }
+
+  function resetMediaSheetRevealGesture() {
+    releaseCapturedPointer(
+      mediaSheetRevealCapturedElement,
+      mediaSheetRevealPointerId,
+    )
+    mediaSheetRevealPointerId = null
+    mediaSheetRevealCapturedElement = null
+    mediaSheetRevealStartX = 0
+    mediaSheetRevealStartY = 0
+  }
+
   function updateSidebarLayout() {
+    resetSidebarSheetGesture()
+    resetMediaSheetRevealGesture()
+
     if (!props.isModal) {
       isSidebarCollapsible.value = false
       isSidebarExpanded.value = true
@@ -833,21 +962,216 @@
     }
   }
 
+  function openSidebar() {
+    if (!isModalSidebarCollapsible.value) {
+      return
+    }
+
+    resetSidebarSheetGesture()
+    isSidebarExpanded.value = true
+  }
+
   function toggleSidebar() {
     if (!isModalSidebarCollapsible.value) {
       return
     }
 
-    isSidebarExpanded.value = !isSidebarExpanded.value
+    if (isSidebarExpanded.value) {
+      closeSidebar()
+      return
+    }
+
+    openSidebar()
   }
 
-  function closeSidebar() {
+  function closeSidebar(options: { restoreFocus?: boolean } = {}) {
     if (!isModalSidebarCollapsible.value) {
       return
     }
 
+    resetSidebarSheetGesture()
     isSidebarExpanded.value = false
-    focusSidebarToggle(true)
+
+    if (options.restoreFocus !== false) {
+      focusSidebarToggle(true)
+    }
+  }
+
+  function handleSidebarBackdropClick() {
+    closeSidebar()
+  }
+
+  function handleMediaPointerdown(event: PointerEvent) {
+    swipeNavigation.onPointerdown(event)
+    handleMediaSheetRevealPointerdown(event)
+  }
+
+  function handleMediaPointermove(event: PointerEvent) {
+    swipeNavigation.onPointermove(event)
+    handleMediaSheetRevealPointermove(event)
+  }
+
+  async function handleMediaPointerup(event: PointerEvent) {
+    await swipeNavigation.onPointerup(event)
+    await handleMediaSheetRevealPointerup(event)
+  }
+
+  function handleMediaPointercancel(event: PointerEvent) {
+    swipeNavigation.onPointercancel()
+    handleMediaSheetRevealPointercancel(event)
+  }
+
+  function handleMediaSheetRevealPointerdown(event: PointerEvent) {
+    if (
+      !event.isPrimary ||
+      event.pointerType === "mouse" ||
+      !isModalSidebarCollapsible.value ||
+      isSidebarExpanded.value ||
+      Date.now() < navigationLockedUntil.value ||
+      isGestureIgnoredTarget(event.target)
+    ) {
+      return
+    }
+
+    mediaSheetRevealPointerId = event.pointerId
+    mediaSheetRevealStartX = event.clientX
+    mediaSheetRevealStartY = event.clientY
+
+    if (event.currentTarget instanceof Element && "setPointerCapture" in event.currentTarget) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        mediaSheetRevealCapturedElement = event.currentTarget
+      } catch {
+        mediaSheetRevealCapturedElement = null
+      }
+    }
+  }
+
+  function handleMediaSheetRevealPointermove(event: PointerEvent) {
+    if (event.pointerId !== mediaSheetRevealPointerId) {
+      return
+    }
+
+    const deltaX = Math.abs(event.clientX - mediaSheetRevealStartX)
+    const deltaY = mediaSheetRevealStartY - event.clientY
+
+    if (deltaY > 10 && deltaY > deltaX) {
+      event.preventDefault()
+    }
+  }
+
+  async function handleMediaSheetRevealPointerup(event: PointerEvent) {
+    if (event.pointerId !== mediaSheetRevealPointerId) {
+      return
+    }
+
+    const deltaX = event.clientX - mediaSheetRevealStartX
+    const deltaY = event.clientY - mediaSheetRevealStartY
+
+    resetMediaSheetRevealGesture()
+
+    if (-deltaY < SHEET_SWIPE_MIN_DISTANCE) {
+      return
+    }
+
+    if (Math.abs(deltaX) > SHEET_SWIPE_MAX_HORIZONTAL_DISTANCE) {
+      return
+    }
+
+    if (Math.abs(deltaY) <= Math.abs(deltaX) * SHEET_SWIPE_MIN_VERTICAL_RATIO) {
+      return
+    }
+
+    openSidebar()
+  }
+
+  function handleMediaSheetRevealPointercancel(_event: PointerEvent) {
+    resetMediaSheetRevealGesture()
+  }
+
+  function handleSidebarSheetPointerdown(event: PointerEvent) {
+    if (
+      !event.isPrimary ||
+      event.pointerType === "mouse" ||
+      !isModalSidebarCollapsible.value ||
+      !isSidebarExpanded.value ||
+      isGestureIgnoredTarget(event.target)
+    ) {
+      return
+    }
+
+    sidebarSheetPointerId = event.pointerId
+    sidebarSheetStartX = event.clientX
+    sidebarSheetStartY = event.clientY
+    sidebarSheetStartScrollTop = sidebarElement.value?.scrollTop ?? 0
+
+    if (event.currentTarget instanceof Element && "setPointerCapture" in event.currentTarget) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        sidebarSheetCapturedElement = event.currentTarget
+      } catch {
+        sidebarSheetCapturedElement = null
+      }
+    }
+  }
+
+  function handleSidebarSheetPointermove(event: PointerEvent) {
+    if (event.pointerId !== sidebarSheetPointerId) {
+      return
+    }
+
+    const sidebar = sidebarElement.value
+    if (!sidebar || sidebarSheetStartScrollTop > 0 || sidebar.scrollTop > 0) {
+      return
+    }
+
+    const deltaX = event.clientX - sidebarSheetStartX
+    const deltaY = event.clientY - sidebarSheetStartY
+
+    if (deltaY <= 0) {
+      if (isSidebarSheetDragging.value) {
+        sidebarSheetDragOffset.value = 0
+      }
+      return
+    }
+
+    if (deltaY > 10 && deltaY > Math.abs(deltaX)) {
+      event.preventDefault()
+      isSidebarSheetDragging.value = true
+      sidebarSheetDragOffset.value = Math.min(deltaY, SHEET_MAX_DRAG_OFFSET)
+    }
+  }
+
+  function handleSidebarSheetPointerup(event: PointerEvent) {
+    if (event.pointerId !== sidebarSheetPointerId) {
+      return
+    }
+
+    const deltaX = event.clientX - sidebarSheetStartX
+    const deltaY = event.clientY - sidebarSheetStartY
+    const shouldClose =
+      isSidebarSheetDragging.value &&
+      deltaY >= SHEET_SWIPE_MIN_DISTANCE &&
+      deltaY > Math.abs(deltaX) * SHEET_SWIPE_MIN_VERTICAL_RATIO
+
+    resetSidebarSheetGesture()
+
+    if (shouldClose) {
+      closeSidebar({ restoreFocus: false })
+    }
+  }
+
+  function handleSidebarSheetPointercancel(_event: PointerEvent) {
+    resetSidebarSheetGesture()
+  }
+
+  function canStartSwipeNavigation(event: PointerEvent) {
+    if (Date.now() < navigationLockedUntil.value) {
+      return false
+    }
+
+    const target = event.target
+    return !isGestureIgnoredTarget(target)
   }
 
   async function attemptVideoPlayback(): Promise<void> {
@@ -960,6 +1284,8 @@
     () => {
       wheelDeltaAccumulator.value = 0
       navigationLockedUntil.value = 0
+      resetSidebarSheetGesture()
+      resetMediaSheetRevealGesture()
       isPlayingHd.value = false
       pendingVideoRestore = null
       void attemptVideoPlayback()
@@ -1097,6 +1423,8 @@
   })
 
   onUnmounted(() => {
+    resetSidebarSheetGesture()
+    resetMediaSheetRevealGesture()
     window.removeEventListener("resize", updateSidebarLayout)
     window.removeEventListener("keydown", handleKeydown)
     removePlayerEventListeners?.()

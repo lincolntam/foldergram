@@ -1,12 +1,13 @@
 <template>
   <div class="rail-viewer fixed inset-0 z-[80] bg-black" @click.self="emit('close')">
     <button
-      class="absolute right-4 top-4 z-[6] inline-flex h-11 w-11 items-center justify-center rounded-full border-0 bg-transparent p-0 text-white transition-opacity duration-150 hover:opacity-72"
+      class="rail-viewer__close"
       type="button"
       aria-label="Close viewer"
+      data-swipe-ignore="true"
       @click="emit('close')"
     >
-      <svg class="h-7 w-7" viewBox="0 0 24 24" role="presentation">
+      <svg class="rail-viewer__close-icon" viewBox="0 0 24 24" role="presentation">
         <path
           d="m7 7 10 10M17 7 7 17"
           fill="none"
@@ -64,7 +65,14 @@
           </svg>
         </button>
 
-        <article class="story-stage" :class="{ 'story-stage--capsule-switching': isCapsuleSwitching }">
+        <article
+          class="story-stage"
+          :class="{ 'story-stage--capsule-switching': isCapsuleSwitching }"
+          @pointercancel="swipeNavigation.onPointercancel"
+          @pointerdown="swipeNavigation.onPointerdown"
+          @pointermove="swipeNavigation.onPointermove"
+          @pointerup="swipeNavigation.onPointerup"
+        >
           <div class="story-stage__progress">
             <span
               v-for="(_, index) in progressMarkers"
@@ -97,6 +105,7 @@
                 class="story-stage__control-button"
                 type="button"
                 :aria-label="isPaused ? 'Resume playback' : 'Pause playback'"
+                data-swipe-ignore="true"
                 @click="togglePaused"
               >
                 <svg v-if="isPaused" class="h-4 w-4" viewBox="0 0 24 24" role="presentation">
@@ -199,6 +208,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import { useHorizontalSwipe } from '../composables/useHorizontalSwipe';
 import type { FeedItem, MomentCapsule } from '../types/api';
 import { useAppStore } from '../stores/app';
 import { useMomentsStore } from '../stores/moments';
@@ -286,6 +296,16 @@ const canGoNextImage = computed(
     activeImages.value.length > 0 &&
     (activeImageIndex.value < activeImages.value.length - 1 || momentsStore.currentHasMore)
 );
+const swipeNavigation = useHorizontalSwipe({
+  canStart: canStartStageSwipe,
+  isEnabled: () => !transitionPending.value && activeImages.value.length > 0,
+  onSwipeLeft: () => {
+    void showNextImage();
+  },
+  onSwipeRight: () => {
+    void showPreviousImage();
+  }
+});
 
 watch(
   () => props.initialId,
@@ -376,6 +396,15 @@ function togglePaused() {
   }
 
   startAutoplay();
+}
+
+function canStartStageSwipe(event: PointerEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return true;
+  }
+
+  return !target.closest('[data-swipe-ignore="true"]');
 }
 
 function supportsViewTransitions() {
@@ -565,6 +594,39 @@ onUnmounted(() => {
 .rail-viewer {
   background: #000;
   backdrop-filter: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.rail-viewer__close {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
+  color: #fff;
+  transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.rail-viewer__close:hover {
+  background: rgba(0, 0, 0, 0.58);
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+.rail-viewer__close-icon {
+  width: 1.3rem;
+  height: 1.3rem;
 }
 
 .story-overlay {
@@ -644,10 +706,12 @@ onUnmounted(() => {
   justify-self: center;
   width: min(100%, 28rem);
   height: min(calc(100vh - 2.5rem), 44rem);
+  height: min(calc(100dvh - 2.5rem), 44rem);
   overflow: hidden;
   border-radius: 1rem;
   background: #000;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.56);
+  touch-action: pan-y pinch-zoom;
 }
 
 .story-stage--capsule-switching {
@@ -818,6 +882,37 @@ onUnmounted(() => {
   z-index: 3;
   padding: 5rem 1rem 1rem;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.8) 44%, rgba(0, 0, 0, 0.96));
+}
+
+@media (max-width: 768px) {
+  .rail-viewer__close {
+    top: max(0.2rem, env(safe-area-inset-top));
+    right: max(0.35rem, env(safe-area-inset-right));
+    left: auto;
+    width: 2.3rem;
+    height: 2.3rem;
+  }
+
+  .rail-viewer__close-icon {
+    width: 0.98rem;
+    height: 0.98rem;
+  }
+
+  .story-overlay {
+    padding:
+      max(1.95rem, calc(env(safe-area-inset-top) + 2.2rem))
+      0.9rem
+      max(0.8rem, env(safe-area-inset-bottom))
+      0.9rem;
+  }
+
+  .story-stage__progress {
+    top: 0.68rem;
+  }
+
+  .story-stage__header {
+    inset: 1.22rem 0.85rem auto 0.85rem;
+  }
 }
 
 @media (min-width: 1024px) {

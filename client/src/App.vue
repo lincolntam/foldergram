@@ -13,7 +13,7 @@
   <AuthGate v-else-if="authStore.requiresLogin" />
   <AppShell v-else>
     <RouterView :route="displayRoute" />
-    <div v-if="showImageModal" class="fixed inset-0 z-40 flex items-center justify-center px-8 py-8 max-md:px-4 max-md:py-4 bg-black/72" @click.self="closeImageModal">
+    <div v-if="showImageModal" class="app__image-modal-layer" @click.self="closeImageModal">
       <ImageView :id="String(route.params.id ?? '')" modal @close="closeImageModal" />
     </div>
   </AppShell>
@@ -258,3 +258,31 @@ async function closeImageModal() {
   await router.replace(targetPath);
 }
 </script>
+
+<style scoped>
+.app__image-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding:
+    max(0.85rem, env(safe-area-inset-top))
+    max(0.85rem, env(safe-area-inset-right))
+    max(0.85rem, env(safe-area-inset-bottom))
+    max(0.85rem, env(safe-area-inset-left));
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.72);
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 769px) {
+  .app__image-modal-layer {
+    align-items: center;
+    padding: 2rem;
+  }
+}
+</style>

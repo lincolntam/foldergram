@@ -75,11 +75,13 @@
         class="feed-card__player"
         :src.prop="homeVideoSource"
         :title.prop="item.filename"
+        :fullscreenOrientation.prop="'none'"
         :playsInline.prop="true"
         :muted.prop="appStore.videoMuted"
         :loop.prop="true"
         load="visible"
         preload="metadata"
+        @fullscreen-change="handleHomeVideoFullscreenChange"
       >
         <media-provider />
         <media-poster
@@ -87,7 +89,7 @@
           :alt.prop="item.filename"
         />
         <media-controls
-          v-if="isActiveVideo"
+          v-if="showHomeVideoControls"
           class="feed-card__player-controls"
         >
           <media-controls-group class="feed-card__player-controls-group">
@@ -122,6 +124,7 @@
             <media-fullscreen-button
               class="feed-card__player-control"
               aria-label="Toggle fullscreen"
+              target="media"
             >
               <span
                 class="feed-card__player-control-icon feed-card__player-fullscreen-icon feed-card__player-fullscreen-icon--enter i-fluent-full-screen-maximize-16-regular"
@@ -247,15 +250,14 @@
           :disabled="deleting"
           @click="handleDelete"
         >
-          <svg class="w-[1.15rem] h-[1.15rem] shrink-0" viewBox="0 0 24 24" role="presentation">
+          <svg class="w-[1.15rem] h-[1.15rem] shrink-0" viewBox="0 0 32 32" role="presentation">
+            <path d="M12 12h2v12h-2z" fill="currentColor" />
+            <path d="M18 12h2v12h-2z" fill="currentColor" />
             <path
-              d="M9 4.75h6m-8 3h10m-8.5 0v10a1.25 1.25 0 0 0 1.25 1.25h4.5A1.25 1.25 0 0 0 15.5 17.75v-10m-4 3v5m4-5v5"
-              fill="none"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.8"
+              d="M4 6v2h2v20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8h2V6zm4 22V8h16v20z"
+              fill="currentColor"
             />
+            <path d="M12 2h8v2h-8z" fill="currentColor" />
           </svg>
           <span>{{ deleting ? 'Deleting...' : 'Delete post' }}</span>
         </button>
@@ -380,6 +382,7 @@ const deleteOriginalFromDisk = ref(false);
 const deleteError = ref<string | null>(null);
 const homeVideoTarget = ref<HTMLElement | null>(null);
 const homePlayerElement = ref<MediaPlayerElement | null>(null);
+const isHomeVideoFullscreen = ref(false);
 const lastHomeImageTapAt = ref(0);
 
 let homeImageTapResetTimer: ReturnType<typeof setTimeout> | null = null;
@@ -411,6 +414,7 @@ const homeVideoSource = computed<PlayerSrc>(() => ({
   src: props.item.previewUrl,
   type: 'video/mp4'
 }));
+const showHomeVideoControls = computed(() => props.isActiveVideo || isHomeVideoFullscreen.value);
 const deleteDialogMessage = computed(() =>
   deleteOriginalFromDisk.value
     ? 'This will permanently delete the post from the app and remove original media from disk.'
@@ -488,13 +492,15 @@ function emitHomeVideoVisibility(ratio: number, centerOffset = Number.POSITIVE_I
   });
 }
 
-function stopHomeVideoObserver() {
+function stopHomeVideoObserver(options: { clearVisibility?: boolean } = {}) {
   if (homeVideoObserver) {
     homeVideoObserver.disconnect();
     homeVideoObserver = null;
   }
 
-  emitHomeVideoVisibility(0);
+  if (options.clearVisibility ?? true) {
+    emitHomeVideoVisibility(0);
+  }
 }
 
 function startHomeVideoObserver() {
@@ -541,7 +547,7 @@ async function syncHomeVideoPlayback() {
     return;
   }
 
-  if (!props.isActiveVideo) {
+  if (!props.isActiveVideo && !isHomeVideoFullscreen.value) {
     void player.pause().catch(() => {
       // Ignore pause rejections before the provider is ready.
     });
@@ -571,11 +577,30 @@ async function syncHomeVideoPlayback() {
 }
 
 function handleHomeVideoPlay() {
-  if (!props.isActiveVideo) {
+  if (!props.isActiveVideo && !isHomeVideoFullscreen.value) {
     void homePlayerElement.value?.pause().catch(() => {
       // Ignore pause rejections before the provider is ready.
     });
   }
+}
+
+function handleHomeVideoFullscreenChange(event: Event) {
+  const nextFullscreen =
+    event instanceof CustomEvent && typeof event.detail === 'boolean'
+      ? event.detail
+      : homePlayerElement.value?.hasAttribute('data-fullscreen') === true;
+
+  isHomeVideoFullscreen.value = nextFullscreen;
+
+  if (nextFullscreen) {
+    stopHomeVideoObserver({ clearVisibility: false });
+    emitHomeVideoVisibility(1, -1);
+    void syncHomeVideoPlayback();
+    return;
+  }
+
+  startHomeVideoObserver();
+  void syncHomeVideoPlayback();
 }
 
 function handleHomeVideoVolumeChange() {
@@ -687,6 +712,10 @@ watch(
   }
 );
 
+watch(isHomeVideoFullscreen, () => {
+  void syncHomeVideoPlayback();
+});
+
 watch(
   () => appStore.videoMuted,
   (videoMuted) => {
@@ -707,7 +736,9 @@ watch(
   () => props.context,
   (context) => {
     if (context === 'home' && props.item.mediaType === 'video') {
-      startHomeVideoObserver();
+      if (!isHomeVideoFullscreen.value) {
+        startHomeVideoObserver();
+      }
       void syncHomeVideoPlayback();
       return;
     }
@@ -720,7 +751,9 @@ watch(
 );
 
 onMounted(() => {
-  startHomeVideoObserver();
+  if (!isHomeVideoFullscreen.value) {
+    startHomeVideoObserver();
+  }
   void syncHomeVideoPlayback();
 });
 
