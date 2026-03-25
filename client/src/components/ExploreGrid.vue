@@ -5,7 +5,7 @@
         :href="href"
         class="explore-grid__item group"
         :class="getTileClass(index)"
-        @click="handleImageNavigation($event, navigate)"
+        @click="handleImageNavigation($event, item, navigate)"
       >
         <ResilientImage :src="item.thumbnailUrl" :alt="item.filename" loading="lazy" :retry-while="appStore.isScanning" />
         <div v-if="item.mediaType === 'video'" class="absolute inset-x-0 top-0 flex items-center justify-between px-2 py-2 text-white pointer-events-none bg-[linear-gradient(180deg,rgba(10,14,24,0.72)_0%,rgba(10,14,24,0)_100%)]">
@@ -31,6 +31,10 @@ defineProps<{
   items: FeedItem[];
 }>();
 
+const emit = defineEmits<{
+  open: [item: FeedItem];
+}>();
+
 const FEATURE_INDEXES = new Set([2, 8, 13]);
 
 const appStore = useAppStore();
@@ -40,12 +44,13 @@ function getTileClass(index: number): string {
   return FEATURE_INDEXES.has(index % 15) ? 'explore-grid__item--feature' : '';
 }
 
-function handleImageNavigation(event: MouseEvent, navigate: () => void) {
+function handleImageNavigation(event: MouseEvent, item: FeedItem, navigate: () => void) {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
     return;
   }
 
   event.preventDefault();
+  emit('open', item);
   appStore.setImageModalBackground(route.fullPath);
   navigate();
 }

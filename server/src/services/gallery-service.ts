@@ -660,6 +660,34 @@ export const galleryService = {
     };
   },
 
+  searchMedia(query: string, page: number, limit: number) {
+    if (!storageService.getState().libraryAvailable) {
+      return {
+        items: [],
+        page,
+        limit,
+        total: 0,
+        hasMore: false
+      };
+    }
+
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length === 0) {
+      return {
+        items: [],
+        page,
+        limit,
+        total: 0,
+        hasMore: false
+      };
+    }
+
+    const total = imageRepository.countVisibleSearch(normalizedQuery);
+    const items = total > 0 ? imageRepository.listVisibleSearch(normalizedQuery, page, limit) : [];
+
+    return buildPaginatedPayload(mapFeedItems(items), page, limit, total);
+  },
+
   listMoments() {
     if (!storageService.getState().libraryAvailable) {
       return {

@@ -39,6 +39,16 @@ export function fetchFeed(page = 1, limit = 24, mode: FeedMode = 'random', seed?
   return requestJson<PaginatedFeed>(`/api/feed?${params.toString()}`);
 }
 
+export function fetchFeedSearch(query: string, page = 1, limit = 24) {
+  const params = new URLSearchParams({
+    q: query,
+    page: String(page),
+    limit: String(limit)
+  });
+
+  return requestJson<PaginatedFeed>(`/api/feed/search?${params.toString()}`);
+}
+
 export function fetchMoments() {
   return requestJson<MomentsPayload>('/api/feed/moments');
 }

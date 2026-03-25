@@ -39,6 +39,9 @@ const feedQuerySchema = paginationQuerySchema.extend({
   mode: z.enum(['recent', 'rediscover', 'random']).default('random'),
   seed: z.coerce.number().int().nonnegative().optional()
 });
+const mediaSearchQuerySchema = paginationQuerySchema.extend({
+  q: z.string().trim().min(1).max(160)
+});
 const homeFeedDefaultBodySchema = z.object({
   defaultMode: z.enum(['recent', 'rediscover', 'random'])
 });
@@ -277,6 +280,11 @@ router.put('/auth/viewer-access', authRateLimiter, (request, response) => {
 router.get('/feed', (request, response) => {
   const query = feedQuerySchema.parse(request.query);
   response.json(galleryService.getFeed(query.page, query.limit, query.mode, query.seed));
+});
+
+router.get('/feed/search', (request, response) => {
+  const query = mediaSearchQuerySchema.parse(request.query);
+  response.json(galleryService.searchMedia(query.q, query.page, query.limit));
 });
 
 router.get('/status', (_request, response) => {

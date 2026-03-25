@@ -23,6 +23,25 @@ const COVER_FILENAMES = ['cover.jpg', 'cover.jpeg', 'cover.png', 'cover.webp', '
 const COVER_FILENAME_SQL = COVER_FILENAMES.map((name) => `'${name}'`).join(', ');
 const VISIBLE_IMAGE_WHERE_SQL = `images.is_deleted = 0 AND images.is_trashed = 0 AND LOWER(images.filename) NOT IN (${COVER_FILENAME_SQL})`;
 const VISIBLE_IMAGE_WHERE_UNSCOPED_SQL = `is_deleted = 0 AND is_trashed = 0 AND LOWER(filename) NOT IN (${COVER_FILENAME_SQL})`;
+const IMAGE_FILENAME_SEARCH_SQL = 'LOWER(images.filename)';
+const FOLDER_NAME_SEARCH_SQL = 'LOWER(folders.name)';
+const FOLDER_SLUG_SEARCH_SQL = 'LOWER(folders.slug)';
+const FOLDER_PATH_SEARCH_SQL = 'LOWER(folders.folder_path)';
+const EXIF_CAMERA_MAKE_SEARCH_SQL =
+  "LOWER(COALESCE(CASE WHEN json_valid(images.exif_json) THEN json_extract(images.exif_json, '$.cameraMake') END, ''))";
+const EXIF_CAMERA_MODEL_SEARCH_SQL =
+  "LOWER(COALESCE(CASE WHEN json_valid(images.exif_json) THEN json_extract(images.exif_json, '$.cameraModel') END, ''))";
+const EXIF_LENS_MODEL_SEARCH_SQL =
+  "LOWER(COALESCE(CASE WHEN json_valid(images.exif_json) THEN json_extract(images.exif_json, '$.lensModel') END, ''))";
+const MEDIA_SEARCH_FIELD_SQL = [
+  IMAGE_FILENAME_SEARCH_SQL,
+  FOLDER_NAME_SEARCH_SQL,
+  FOLDER_SLUG_SEARCH_SQL,
+  FOLDER_PATH_SEARCH_SQL,
+  EXIF_CAMERA_MAKE_SEARCH_SQL,
+  EXIF_CAMERA_MODEL_SEARCH_SQL,
+  EXIF_LENS_MODEL_SEARCH_SQL
+] as const;
 const FEED_IMAGE_SELECT_SQL = `
   SELECT
     images.id,
@@ -45,12 +64,112 @@ const FEED_IMAGE_SELECT_SQL = `
   INNER JOIN folders ON folders.id = images.folder_id
 `;
 
+interface MediaSearchSql {
+  whereSql: string;
+  whereParams: string[];
+  rankSql: string;
+  rankParams: string[];
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 function serializeAnimatedFlag(isAnimated: boolean | null | undefined): number {
   return isAnimated ? 1 : 0;
+}
+
+function normalizeSearchQuery(query: string): string {
+  return query.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
+function buildMediaSearchSql(query: string): MediaSearchSql | null {
+  const normalizedQuery = normalizeSearchQuery(query);
+  if (normalizedQuery.length === 0) {
+    return null;
+  }
+
+  const normalizedTokens = [...new Set(normalizedQuery.split(' ').filter(Boolean))];
+  const tokenClauseSql = `(${MEDIA_SEARCH_FIELD_SQL.map((fieldSql) => `${fieldSql} LIKE ? ESCAPE '\\'`).join(' OR ')})`;
+  const whereSql = normalizedTokens.map(() => tokenClauseSql).join(' AND ');
+  const whereParams = normalizedTokens.flatMap((token) =>
+    MEDIA_SEARCH_FIELD_SQL.map(() => `%${escapeLikePattern(token)}%`)
+  );
+  const queryContainsPattern = `%${escapeLikePattern(normalizedQuery)}%`;
+  const queryPrefixPattern = `${escapeLikePattern(normalizedQuery)}%`;
+
+  const rankSqlParts = [
+    `CASE
+      WHEN ${IMAGE_FILENAME_SEARCH_SQL} = ? THEN 240
+      WHEN ${IMAGE_FILENAME_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 180
+      WHEN ${IMAGE_FILENAME_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 140
+      ELSE 0
+    END`,
+    `CASE
+      WHEN ${FOLDER_NAME_SEARCH_SQL} = ? THEN 120
+      WHEN ${FOLDER_NAME_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 84
+      WHEN ${FOLDER_NAME_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 56
+      ELSE 0
+    END`,
+    `CASE
+      WHEN ${FOLDER_SLUG_SEARCH_SQL} = ? THEN 76
+      WHEN ${FOLDER_SLUG_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 52
+      WHEN ${FOLDER_SLUG_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 36
+      ELSE 0
+    END`,
+    `CASE WHEN ${FOLDER_PATH_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 32 ELSE 0 END`,
+    `CASE WHEN ${EXIF_CAMERA_MAKE_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 20 ELSE 0 END`,
+    `CASE WHEN ${EXIF_CAMERA_MODEL_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 20 ELSE 0 END`,
+    `CASE WHEN ${EXIF_LENS_MODEL_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 18 ELSE 0 END`
+  ];
+  const rankParams: string[] = [
+    normalizedQuery,
+    queryPrefixPattern,
+    queryContainsPattern,
+    normalizedQuery,
+    queryPrefixPattern,
+    queryContainsPattern,
+    normalizedQuery,
+    queryPrefixPattern,
+    queryContainsPattern,
+    queryContainsPattern,
+    queryContainsPattern,
+    queryContainsPattern,
+    queryContainsPattern
+  ];
+
+  for (const token of normalizedTokens) {
+    const tokenPattern = `%${escapeLikePattern(token)}%`;
+    rankSqlParts.push(
+      `CASE WHEN ${IMAGE_FILENAME_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 18 ELSE 0 END`,
+      `CASE WHEN ${FOLDER_NAME_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 12 ELSE 0 END`,
+      `CASE WHEN ${FOLDER_SLUG_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 8 ELSE 0 END`,
+      `CASE WHEN ${FOLDER_PATH_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 8 ELSE 0 END`,
+      `CASE WHEN ${EXIF_CAMERA_MAKE_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 6 ELSE 0 END`,
+      `CASE WHEN ${EXIF_CAMERA_MODEL_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 6 ELSE 0 END`,
+      `CASE WHEN ${EXIF_LENS_MODEL_SEARCH_SQL} LIKE ? ESCAPE '\\' THEN 6 ELSE 0 END`
+    );
+    rankParams.push(
+      tokenPattern,
+      tokenPattern,
+      tokenPattern,
+      tokenPattern,
+      tokenPattern,
+      tokenPattern,
+      tokenPattern
+    );
+  }
+
+  return {
+    whereSql,
+    whereParams,
+    rankSql: rankSqlParts.join(' + '),
+    rankParams
+  };
 }
 
 export interface UpsertFolderInput {
@@ -514,6 +633,28 @@ export const imageRepository = {
     );
   },
 
+  countVisibleSearch(query: string): number {
+    const mediaSearch = buildMediaSearchSql(query);
+    if (!mediaSearch) {
+      return 0;
+    }
+
+    return Number(
+      (
+        database
+          .prepare(
+            `
+            SELECT COUNT(*) AS count
+            FROM images
+            INNER JOIN folders ON folders.id = images.folder_id
+            WHERE ${VISIBLE_IMAGE_WHERE_SQL} AND ${mediaSearch.whereSql}
+            `
+          )
+          .get(...mediaSearch.whereParams) as { count: number }
+      ).count
+    );
+  },
+
   listRecentCandidates(offset: number, limit: number): FeedImage[] {
     return database.prepare(
       `
@@ -561,6 +702,61 @@ export const imageRepository = {
       LIMIT ? OFFSET ?
       `
     ).all(seed, limit, offset) as unknown as FeedImage[];
+  },
+
+  listVisibleSearch(query: string, page: number, limit: number): FeedImage[] {
+    const mediaSearch = buildMediaSearchSql(query);
+    if (!mediaSearch) {
+      return [];
+    }
+
+    const offset = (page - 1) * limit;
+    return database.prepare(
+      `
+      SELECT
+        search_results.id,
+        search_results.folderId,
+        search_results.folderSlug,
+        search_results.folderName,
+        search_results.folderPath,
+        search_results.filename,
+        search_results.width,
+        search_results.height,
+        search_results.mediaType,
+        search_results.durationMs,
+        search_results.isAnimated,
+        search_results.thumbnailUrl,
+        search_results.previewUrl,
+        search_results.playbackStrategy,
+        search_results.sortTimestamp,
+        search_results.takenAt
+      FROM (
+        SELECT
+          images.id,
+          images.folder_id AS folderId,
+          folders.slug AS folderSlug,
+          folders.name AS folderName,
+          folders.folder_path AS folderPath,
+          images.filename,
+          images.width,
+          images.height,
+          images.media_type AS mediaType,
+          images.duration_ms AS durationMs,
+          images.is_animated AS isAnimated,
+          images.thumbnail_path AS thumbnailUrl,
+          images.preview_path AS previewUrl,
+          images.playback_strategy AS playbackStrategy,
+          images.sort_timestamp AS sortTimestamp,
+          images.taken_at AS takenAt,
+          (${mediaSearch.rankSql}) AS searchRank
+        FROM images
+        INNER JOIN folders ON folders.id = images.folder_id
+        WHERE ${VISIBLE_IMAGE_WHERE_SQL} AND ${mediaSearch.whereSql}
+      ) AS search_results
+      ORDER BY search_results.searchRank DESC, search_results.sortTimestamp DESC, search_results.id DESC
+      LIMIT ? OFFSET ?
+      `
+    ).all(...mediaSearch.rankParams, ...mediaSearch.whereParams, limit, offset) as unknown as FeedImage[];
   },
 
   countByMonthDayKeys(monthDayKeys: string[], maxYearExclusive: number): number {
