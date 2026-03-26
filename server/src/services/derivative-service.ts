@@ -31,7 +31,11 @@ interface FfprobeStream {
   pix_fmt?: string;
   tags?: {
     creation_time?: string;
+    rotate?: string;
   };
+  side_data_list?: Array<{
+    rotation?: number;
+  }>;
 }
 
 interface FfprobeFormat {
@@ -100,7 +104,7 @@ async function readVideoProbe(sourcePath: string): Promise<FfprobePayload> {
       '-v',
       'error',
       '-show_entries',
-      'format=duration,format_name:format_tags=creation_time:stream=codec_type,codec_name,width,height,pix_fmt:stream_tags=creation_time',
+      'format=duration,format_name:format_tags=creation_time:stream=codec_type,codec_name,width,height,pix_fmt:stream_tags=creation_time,rotate:stream_side_data=rotation',
       '-of',
       'json',
       sourcePath
@@ -111,6 +115,40 @@ async function readVideoProbe(sourcePath: string): Promise<FfprobePayload> {
   );
 
   return JSON.parse(stdout) as FfprobePayload;
+}
+
+function normalizeVideoRotation(rotation: number | string | null | undefined): number {
+  if (rotation === null || rotation === undefined || rotation === '') {
+    return 0;
+  }
+
+  const parsedRotation = typeof rotation === 'number' ? rotation : Number.parseFloat(rotation);
+  if (!Number.isFinite(parsedRotation)) {
+    return 0;
+  }
+
+  return ((Math.round(parsedRotation) % 360) + 360) % 360;
+}
+
+function resolveVideoDisplayDimensions(videoStream: FfprobeStream | undefined): Pick<MediaMetadata, 'width' | 'height'> {
+  const width = videoStream?.width ?? THUMBNAIL_SIZE;
+  const height = videoStream?.height ?? THUMBNAIL_SIZE;
+  const rotation =
+    videoStream?.side_data_list?.find((sideData) => typeof sideData.rotation === 'number')?.rotation
+    ?? videoStream?.tags?.rotate;
+  const normalizedRotation = normalizeVideoRotation(rotation);
+
+  if (normalizedRotation % 180 === 90) {
+    return {
+      width: height,
+      height: width
+    };
+  }
+
+  return {
+    width,
+    height
+  };
 }
 
 async function readImageMetadata(sourcePath: string): Promise<MediaMetadata> {
@@ -166,11 +204,11 @@ async function readVideoMetadata(sourcePath: string, options: ReadMediaMetadataO
   const durationSeconds = payload.format?.duration ? Number.parseFloat(payload.format.duration) : Number.NaN;
   const durationMs = Number.isFinite(durationSeconds) ? Math.round(durationSeconds * 1000) : null;
   const takenAt = normalizeTakenAtValue(videoStream?.tags?.creation_time ?? payload.format?.tags?.creation_time ?? null);
-  const width = videoStream?.width ?? THUMBNAIL_SIZE;
+  const displayDimensions = resolveVideoDisplayDimensions(videoStream);
 
   return {
-    width,
-    height: videoStream?.height ?? THUMBNAIL_SIZE,
+    width: displayDimensions.width,
+    height: displayDimensions.height,
     takenAt,
     exif: null,
     durationMs,

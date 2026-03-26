@@ -5,6 +5,7 @@ import type { FeedItem, FeedMode } from '../types/api';
 
 interface FeedState {
   mode: FeedMode;
+  loadedMode: FeedMode | null;
   items: FeedItem[];
   page: number;
   limit: number;
@@ -27,6 +28,7 @@ function createRandomSeed(): number {
 export const useFeedStore = defineStore('feed', {
   state: (): FeedState => ({
     mode: 'random',
+    loadedMode: null,
     items: [],
     page: 1,
     limit: 18,
@@ -39,7 +41,10 @@ export const useFeedStore = defineStore('feed', {
   actions: {
     initializeMode(mode: FeedMode = 'random') {
       this.mode = mode;
-      this.randomSeed = null;
+
+      if (mode !== 'random') {
+        this.randomSeed = null;
+      }
     },
 
     ensureRandomSeed() {
@@ -70,6 +75,7 @@ export const useFeedStore = defineStore('feed', {
     },
 
     resetForRebuild() {
+      this.loadedMode = null;
       this.items = [];
       this.page = 1;
       this.hasMore = true;
@@ -83,11 +89,15 @@ export const useFeedStore = defineStore('feed', {
         return;
       }
 
-      if (this.initialized && !force) {
+      const queueRequiresSeed = this.mode === 'random';
+      const queueMatchesMode = this.loadedMode === this.mode && (!queueRequiresSeed || this.randomSeed !== null);
+
+      if (this.initialized && !force && queueMatchesMode) {
         return;
       }
 
       this.items = [];
+      this.loadedMode = null;
       this.page = 1;
       this.hasMore = true;
       this.initialized = false;
@@ -106,6 +116,7 @@ export const useFeedStore = defineStore('feed', {
         const seed = this.mode === 'random' ? this.ensureRandomSeed() : undefined;
         const payload = await fetchFeed(this.page, this.limit, this.mode, seed);
         this.items.push(...payload.items);
+        this.loadedMode = payload.mode ?? this.mode;
         this.page += 1;
         this.hasMore = payload.hasMore;
         this.initialized = true;

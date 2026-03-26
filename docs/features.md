@@ -29,6 +29,28 @@ It includes:
 | Rediscover | "Older posts resurface when they are worth another look." |
 | Random | "A fresh shuffle that stays steady while you browse." |
 
+## Reels
+
+The dedicated reels view is available at `/reels`.
+
+It includes:
+
+- a video-only queue sourced from indexed library posts
+- a full-height scroll-snap deck
+- wheel, arrow-key, and page-up/page-down navigation in addition to direct scrolling
+- infinite loading with prefetch as you approach the end of the current queue
+- a desktop action rail for like/favorite toggle, details sidebar, folder shortcut, and original-video link
+- loading, empty, and error states
+- an app-wide default mode from Settings; the page itself does not expose an inline mode switch
+
+### Queue behavior
+
+| Mode | What it does |
+| --- | --- |
+| Recommended | "Affinity-ranked mix." It scores videos using freshness, likes, recent folder affinity, portrait fit, duration fit, and a deterministic seed, then reduces immediate repeats from the same folder when alternatives exist. |
+| Recent | "Newest videos first." |
+| Random | "Stable session shuffle." |
+
 ## Explore
 
 Explore is a dedicated full-screen shell with a darker visual treatment.
@@ -134,6 +156,7 @@ It exposes:
 
 - admin-password controls
 - viewer password and public access controls
+- home and reels default feed-mode controls
 - live scan status
 - storage and index status
 - last completed scan details

@@ -115,6 +115,40 @@ describe.sequential('video derivative strategy', () => {
     expect(ffmpegCalls[1]?.[1]).toContain('libx264');
     expect(ffmpegCalls[1]?.[1]).toContain(expectedVideoScaleFilter());
   });
+
+  it('normalizes rotated source dimensions to display dimensions before returning metadata', async () => {
+    execFileAsyncMock.mockImplementation(createExecFileAsyncMock({
+      format: {
+        duration: '4.0',
+        format_name: 'mov,mp4,m4a,3gp,3g2,mj2'
+      },
+      streams: [
+        {
+          codec_type: 'video',
+          codec_name: 'h264',
+          width: 1920,
+          height: 1080,
+          pix_fmt: 'yuv420p',
+          side_data_list: [
+            {
+              rotation: -90
+            }
+          ]
+        },
+        { codec_type: 'audio', codec_name: 'aac' }
+      ]
+    }));
+
+    const sourcePath = path.join(appConfig.galleryRoot, 'clips', 'reel-rotated.mp4');
+
+    await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+    await fs.writeFile(sourcePath, Buffer.alloc(1024 * 1024));
+
+    const result = await generateDerivatives(sourcePath, 'clips/reel-rotated.mp4', true);
+
+    expect(result.width).toBe(1080);
+    expect(result.height).toBe(1920);
+  });
 });
 
 function expectedVideoScaleFilter(): string {

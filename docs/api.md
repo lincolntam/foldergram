@@ -115,7 +115,7 @@ Query parameters:
 | --- | --- | --- | --- |
 | `page` | integer | `1` | Minimum `1`. |
 | `limit` | integer | `24` | Minimum `1`, maximum `60`. |
-| `mode` | `recent | rediscover | random` | `recent` | Home feed mode. |
+| `mode` | `recent | rediscover | random` | `random` | Home feed mode. |
 | `seed` | integer | unset | Optional random seed for `random` mode. |
 
 Response shape:
@@ -136,6 +136,39 @@ Notes:
 - `items` contain both images and videos.
 - `thumbnailUrl` points to `/thumbnails/...`.
 - `previewUrl` points to `/previews/...`.
+
+### `GET /api/reels`
+
+Query parameters:
+
+| Param | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `page` | integer | `1` | Minimum `1`. |
+| `limit` | integer | `24` | Minimum `1`, maximum `60`. The current client helper requests `6` per page. |
+| `mode` | `recommended | recent | random` | `recommended` | Reels queue mode. |
+| `seed` | integer | unset | Optional seed used to keep `recommended` and `random` queues stable while paging. |
+| `lastFolder` | string | unset | Optional recent-navigation hint used by `recommended`. |
+| `recentFolders` | comma-separated string | unset | Optional recent-navigation hints used by `recommended`. |
+
+Response shape:
+
+```json
+{
+  "mode": "recommended",
+  "items": [],
+  "page": 1,
+  "limit": 6,
+  "total": 0,
+  "hasMore": false
+}
+```
+
+Notes:
+
+- `items` contain videos only.
+- `recommended` uses `lastFolder` and `recentFolders` to bias the queue toward folders you recently opened.
+- `recent` ignores recommendation hints and returns newest indexed videos first.
+- `random` and `recommended` stay stable across pages when the same `seed` is reused.
 
 ### `GET /api/feed/moments`
 
@@ -325,6 +358,8 @@ Notable fields:
 | `scan` | Live scan progress snapshot. `currentFolder` is redacted and `lastCompletedScan.error_text` is always `null`. |
 | `storage` | Availability with a generic unavailable message only. |
 | `libraryIndex` | Rebuild requirement plus ignored root-media count. Gallery-root paths are omitted. |
+| `preferences.defaultHomeFeedMode` | Current app-wide default home feed mode. |
+| `preferences.defaultReelsFeedMode` | Current app-wide default reels mode used when `/reels` opens. |
 
 ### `GET /api/admin/stats`
 
@@ -517,6 +552,58 @@ Notes:
 - changing viewer access invalidates older sessions
 - `mode=public` enables anonymous browsing immediately
 - anonymous public sessions use local browser favorites instead of shared `/api/likes`
+
+### `PUT /api/admin/settings/home-feed-default`
+
+Sets the default mode used when Home opens.
+
+Body:
+
+```json
+{
+  "defaultMode": "recent"
+}
+```
+
+Allowed values:
+
+- `recent`
+- `rediscover`
+- `random`
+
+Success:
+
+```json
+{
+  "defaultMode": "recent"
+}
+```
+
+### `PUT /api/admin/settings/reels-feed-default`
+
+Sets the app-wide default mode used when `/reels` opens.
+
+Body:
+
+```json
+{
+  "defaultMode": "recommended"
+}
+```
+
+Allowed values:
+
+- `recommended`
+- `recent`
+- `random`
+
+Success:
+
+```json
+{
+  "defaultMode": "recommended"
+}
+```
 
 ### `POST /api/images/:id/like`
 

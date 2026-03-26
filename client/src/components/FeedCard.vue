@@ -67,8 +67,14 @@
     <div
       v-else
       ref="homeVideoTarget"
-      class="relative block overflow-hidden rounded-[0.5rem] border border-border bg-surface-alt"
-      :style="{ aspectRatio: mediaAspectRatio }"
+      class="feed-card__video-shell relative block overflow-hidden rounded-[0.5rem] border border-border bg-surface-alt"
+      :class="{ 'feed-card__video-shell--interactive': showHomeVideoSurfaceControls }"
+      :style="{ aspectRatio: homeVideoAspectRatio }"
+      :aria-label="showHomeVideoSurfaceControls ? 'Toggle playback' : undefined"
+      :role="showHomeVideoSurfaceControls ? 'button' : undefined"
+      :tabindex="showHomeVideoSurfaceControls ? 0 : -1"
+      @click="handleHomeVideoSurfaceClick"
+      @keydown="handleHomeVideoSurfaceKeydown"
     >
       <media-player
         ref="homePlayerElement"
@@ -91,6 +97,8 @@
         <media-controls
           v-if="showHomeVideoControls"
           class="feed-card__player-controls"
+          @click.stop
+          @keydown.stop
         >
           <media-controls-group class="feed-card__player-controls-group">
             <media-play-button
@@ -138,6 +146,13 @@
           </media-controls-group>
         </media-controls>
       </media-player>
+      <div
+        v-if="showHomeVideoPausedIndicator"
+        class="feed-card__pause-indicator"
+        aria-hidden="true"
+      >
+        <span class="feed-card__pause-icon i-fluent-play-20-filled" />
+      </div>
       <div
         class="absolute inset-x-0 top-0 flex items-center justify-between gap-3 px-4 py-3 text-white pointer-events-none bg-[linear-gradient(180deg,rgba(10,14,24,0.82)_0%,rgba(10,14,24,0)_100%)]"
       >
@@ -382,6 +397,8 @@ const deleteOriginalFromDisk = ref(false);
 const deleteError = ref<string | null>(null);
 const homeVideoTarget = ref<HTMLElement | null>(null);
 const homePlayerElement = ref<MediaPlayerElement | null>(null);
+const loadedHomeVideoAspectRatio = ref<string | null>(null);
+const isHomeVideoPaused = ref(false);
 const isHomeVideoFullscreen = ref(false);
 const lastHomeImageTapAt = ref(0);
 
@@ -409,12 +426,15 @@ const formattedDate = computed(() =>
 );
 const formattedDuration = computed(() => formatMediaDuration(props.item.durationMs));
 const mediaAspectRatio = computed(() => resolveFeedAspectRatio(props.item.width, props.item.height));
+const homeVideoAspectRatio = computed(() => loadedHomeVideoAspectRatio.value ?? mediaAspectRatio.value);
 const homeImageSrc = computed(() => (props.item.isAnimated ? props.item.previewUrl : props.item.thumbnailUrl));
 const homeVideoSource = computed<PlayerSrc>(() => ({
   src: props.item.previewUrl,
   type: 'video/mp4'
 }));
 const showHomeVideoControls = computed(() => props.isActiveVideo || isHomeVideoFullscreen.value);
+const showHomeVideoSurfaceControls = computed(() => props.isActiveVideo || isHomeVideoFullscreen.value);
+const showHomeVideoPausedIndicator = computed(() => showHomeVideoSurfaceControls.value && isHomeVideoPaused.value);
 const deleteDialogMessage = computed(() =>
   deleteOriginalFromDisk.value
     ? 'This will permanently delete the post from the app and remove original media from disk.'
@@ -424,6 +444,12 @@ const deleteDialogConfirmLabel = computed(() => (deleteOriginalFromDisk.value ? 
 
 function isPrimaryPlainClick(event: MouseEvent) {
   return !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(
+    target.closest('a, button, input, textarea, select, media-play-button, media-mute-button, media-fullscreen-button, media-controls')
+  );
 }
 
 function clearHomeImageTapResetTimer() {
@@ -492,6 +518,29 @@ function emitHomeVideoVisibility(ratio: number, centerOffset = Number.POSITIVE_I
   });
 }
 
+function getHomeVideoElement(player: MediaPlayerElement | null): HTMLVideoElement | null {
+  if (!player) {
+    return null;
+  }
+
+  const directVideo = player.querySelector('video');
+  if (directVideo instanceof HTMLVideoElement) {
+    return directVideo;
+  }
+
+  const shadowVideo = player.shadowRoot?.querySelector('video');
+  return shadowVideo instanceof HTMLVideoElement ? shadowVideo : null;
+}
+
+function syncHomeVideoAspectRatio(player: MediaPlayerElement | null = homePlayerElement.value) {
+  const video = getHomeVideoElement(player);
+  if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
+    return;
+  }
+
+  loadedHomeVideoAspectRatio.value = resolveFeedAspectRatio(video.videoWidth, video.videoHeight);
+}
+
 function stopHomeVideoObserver(options: { clearVisibility?: boolean } = {}) {
   if (homeVideoObserver) {
     homeVideoObserver.disconnect();
@@ -548,6 +597,7 @@ async function syncHomeVideoPlayback() {
   }
 
   if (!props.isActiveVideo && !isHomeVideoFullscreen.value) {
+    isHomeVideoPaused.value = false;
     void player.pause().catch(() => {
       // Ignore pause rejections before the provider is ready.
     });
@@ -559,6 +609,7 @@ async function syncHomeVideoPlayback() {
 
   try {
     await player.play();
+    isHomeVideoPaused.value = false;
     return;
   } catch {
     if (appStore.videoMuted) {
@@ -577,11 +628,51 @@ async function syncHomeVideoPlayback() {
 }
 
 function handleHomeVideoPlay() {
+  isHomeVideoPaused.value = false;
+
   if (!props.isActiveVideo && !isHomeVideoFullscreen.value) {
     void homePlayerElement.value?.pause().catch(() => {
       // Ignore pause rejections before the provider is ready.
     });
   }
+}
+
+function handleHomeVideoPause() {
+  isHomeVideoPaused.value = showHomeVideoSurfaceControls.value;
+}
+
+async function handleHomeVideoSurfaceClick(event: MouseEvent) {
+  if (!showHomeVideoSurfaceControls.value || !isPrimaryPlainClick(event) || isInteractiveTarget(event.target)) {
+    return;
+  }
+
+  const player = homePlayerElement.value;
+  if (!player) {
+    return;
+  }
+
+  if (player.paused) {
+    await syncHomeVideoPlayback();
+    return;
+  }
+
+  isHomeVideoPaused.value = true;
+  void player.pause().catch(() => {
+    // Ignore pause rejections before the provider is ready.
+  });
+}
+
+function handleHomeVideoSurfaceKeydown(event: KeyboardEvent) {
+  if (isInteractiveTarget(event.target)) {
+    return;
+  }
+
+  if (event.key !== 'Enter' && event.key !== ' ') {
+    return;
+  }
+
+  event.preventDefault();
+  void handleHomeVideoSurfaceClick(new MouseEvent('click', { button: 0 }));
 }
 
 function handleHomeVideoFullscreenChange(event: Event) {
@@ -623,6 +714,7 @@ function bindHomePlayerEventListeners(player: MediaPlayerElement | null) {
   }
 
   const handleReady = () => {
+    syncHomeVideoAspectRatio(player);
     void syncHomeVideoPlayback();
   };
   const handleVolume = () => {
@@ -631,20 +723,26 @@ function bindHomePlayerEventListeners(player: MediaPlayerElement | null) {
   const handlePlay = () => {
     handleHomeVideoPlay();
   };
+  const handlePause = () => {
+    handleHomeVideoPause();
+  };
 
   player.addEventListener('loaded-metadata', handleReady);
   player.addEventListener('can-play', handleReady);
   player.addEventListener('volume-change', handleVolume);
   player.addEventListener('play', handlePlay);
+  player.addEventListener('pause', handlePause);
 
   removeHomePlayerEventListeners = () => {
     player.removeEventListener('loaded-metadata', handleReady);
     player.removeEventListener('can-play', handleReady);
     player.removeEventListener('volume-change', handleVolume);
     player.removeEventListener('play', handlePlay);
+    player.removeEventListener('pause', handlePause);
   };
 
   if (player.hasAttribute('data-can-play')) {
+    syncHomeVideoAspectRatio(player);
     void syncHomeVideoPlayback();
   }
 }
@@ -706,6 +804,14 @@ watch(
 );
 
 watch(
+  () => props.item.id,
+  () => {
+    loadedHomeVideoAspectRatio.value = null;
+    isHomeVideoPaused.value = false;
+  }
+);
+
+watch(
   () => props.isActiveVideo,
   () => {
     void syncHomeVideoPlayback();
@@ -729,6 +835,8 @@ watch(
 );
 
 watch(homePlayerElement, (player) => {
+  loadedHomeVideoAspectRatio.value = null;
+  isHomeVideoPaused.value = false;
   bindHomePlayerEventListeners(player);
 });
 
@@ -744,6 +852,7 @@ watch(
     }
 
     stopHomeVideoObserver();
+    isHomeVideoPaused.value = false;
     void homePlayerElement.value?.pause().catch(() => {
       // Ignore pause rejections before the provider is ready.
     });
@@ -760,6 +869,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearHomeImageTapResetTimer();
   stopHomeVideoObserver();
+  isHomeVideoPaused.value = false;
   removeHomePlayerEventListeners?.();
   removeHomePlayerEventListeners = null;
   void homePlayerElement.value?.pause().catch(() => {

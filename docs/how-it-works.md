@@ -130,6 +130,20 @@ The home feed supports three modes:
 | `rediscover` | Surfaces posts older than 180 days and prioritizes liked items within that older pool. |
 | `random` | Uses a deterministic seeded shuffle so a browsing session stays stable while paging. |
 
+## Reels behavior
+
+The `/reels` route reads only indexed video candidates from SQLite. It does not
+scan the filesystem on request.
+
+The page opens with the app-wide default configured in Settings and does not
+provide an inline mode switch of its own.
+
+| Mode | Behavior |
+| --- | --- |
+| `recommended` | Builds a seeded queue from indexed videos using freshness, likes, folder-affinity signals from recent navigation, portrait fit, duration fit, and a small deterministic jitter. It also penalizes immediate repeats from the same folder when alternatives exist. |
+| `recent` | Uses newest indexed videos first. |
+| `random` | Uses a deterministic seeded shuffle so the queue stays stable while paging. |
+
 ## Moments and highlights
 
 `GET /api/feed/moments` can return either a Moments rail or a Highlights rail.

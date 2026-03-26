@@ -31,7 +31,7 @@ features:
     details: Foldergram indexes supported image and video formats, generates thumbnails, creates previews eagerly or lazily, and can expose compatible original MP4 playback in the detail player.
   - icon: 🎯
     title: Honest scope
-    details: The current app includes feed browsing, explore, library, likes and favorites, moments, optional admin/viewer/public access control, and admin-only maintenance controls without cloud sync or social features.
+    details: The current app includes home feed browsing, a dedicated reels route, explore, library, likes and favorites, moments, optional admin/viewer/public access control, and admin-only maintenance controls without cloud sync or social features.
 ---
 
 ## Foldergram at a Glance
@@ -40,7 +40,7 @@ features:
 
 <div class="cs-feature">
 <h3>🚀 What ships today</h3>
-<p>The current repository includes Home, Explore, Library, Likes and Favorites, Moments, Settings, folder pages, a post detail view and modal flow, shared SQLite likes, browser-local favorites in public mode, delete actions, optional admin/viewer/public access control, and local scan/rebuild tooling.</p>
+<p>The current repository includes Home, Reels, Explore, Library, Likes and Favorites, Moments, Settings, folder pages, a post detail view and modal flow, shared SQLite likes, browser-local favorites in public mode, delete actions, optional admin/viewer/public access control, and local scan/rebuild tooling.</p>
 </div>
 
 <div class="cs-feature">
