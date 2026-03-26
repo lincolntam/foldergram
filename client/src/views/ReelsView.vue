@@ -41,7 +41,22 @@
         v-if="activeItem"
         class="reels-view__action-rail hidden md:grid"
         :item="activeItem"
-      />
+        :info-open="isInfoSidebarOpen"
+        @toggle-info="handleInfoToggle"
+      >
+        <template #info-panel>
+          <Transition name="reels-info-popup">
+            <div v-if="isInfoSidebarOpen" data-test="info-shell" class="reels-view__info-shell">
+              <ReelInfoSidebar
+                :item="activeItem"
+                :folder="activeFolder"
+                :open="isInfoSidebarOpen"
+                @close="closeInfoSidebar"
+              />
+            </div>
+          </Transition>
+        </template>
+      </ReelActionRail>
 
       <div class="reels-view__nav-controls hidden md:grid" aria-label="Reel navigation">
         <button
@@ -86,10 +101,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import ReelActionRail from '../components/ReelActionRail.vue';
 import ReelDeck from '../components/ReelDeck.vue';
+import ReelInfoSidebar from '../components/ReelInfoSidebar.vue';
 import { useAppStore } from '../stores/app';
 import { useFoldersStore } from '../stores/folders';
 import { useReelsStore } from '../stores/reels';
@@ -98,8 +114,12 @@ const appStore = useAppStore();
 const foldersStore = useFoldersStore();
 const reelsStore = useReelsStore();
 const deckElement = ref<InstanceType<typeof ReelDeck> | null>(null);
+const isInfoSidebarOpen = ref(false);
 
 const activeItem = computed(() => reelsStore.activeItem);
+const activeFolder = computed(() =>
+  activeItem.value ? foldersStore.items.find((folder) => folder.slug === activeItem.value?.folderSlug) ?? null : null
+);
 const activeIndex = computed(() => reelsStore.items.findIndex((item) => item.id === reelsStore.activeReelId));
 const canGoPrevious = computed(() => activeIndex.value > 0);
 const canGoNext = computed(() => activeIndex.value >= 0 && activeIndex.value < reelsStore.items.length - 1);
@@ -119,6 +139,14 @@ function goToPrevious() {
 
 function goToNext() {
   deckElement.value?.goToNext();
+}
+
+function handleInfoToggle() {
+  isInfoSidebarOpen.value = !isInfoSidebarOpen.value;
+}
+
+function closeInfoSidebar() {
+  isInfoSidebarOpen.value = false;
 }
 
 function shouldCaptureGlobalWheel(event: WheelEvent) {
@@ -159,6 +187,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('wheel', handleGlobalWheel);
 });
+
+watch(activeItem, (item) => {
+  if (!item) {
+    isInfoSidebarOpen.value = false;
+  }
+});
 </script>
 
 <style scoped>
@@ -192,11 +226,15 @@ onBeforeUnmount(() => {
   margin-bottom: 4.8rem;
 }
 
+.reels-view__info-shell {
+  display: block;
+}
+
 .reels-view__nav-controls {
   position: fixed;
   top: 50%;
   right: max(1rem, env(safe-area-inset-right));
-  z-index: 5;
+  z-index: 12;
   gap: 0.9rem;
   transform: translateY(-50%);
 }
@@ -287,5 +325,15 @@ onBeforeUnmount(() => {
     margin: 1rem auto;
     padding: 1.55rem 1.15rem;
   }
+}
+
+.reels-info-popup-enter-active,
+.reels-info-popup-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.reels-info-popup-enter-from,
+.reels-info-popup-leave-to {
+  opacity: 0;
 }
 </style>

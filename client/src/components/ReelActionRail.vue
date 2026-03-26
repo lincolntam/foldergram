@@ -16,6 +16,26 @@
       />
     </button>
 
+    <div class="reel-action-rail__info-wrap">
+      <button
+        class="reel-action-rail__button"
+        type="button"
+        :aria-label="infoOpen ? 'Hide reel details' : 'Show reel details'"
+        :aria-pressed="infoOpen"
+        @click="$emit('toggle-info')"
+      >
+        <span
+          class="reel-action-rail__icon"
+          :class="infoOpen ? 'i-fluent-info-16-filled' : 'i-fluent-info-16-regular'"
+          aria-hidden="true"
+        />
+      </button>
+
+      <div v-if="$slots['info-panel']" class="reel-action-rail__info-panel">
+        <slot name="info-panel" />
+      </div>
+    </div>
+
     <RouterLink
       class="reel-action-rail__button"
       :to="{ name: 'folder', params: { slug: item.folderSlug } }"
@@ -46,6 +66,11 @@ import type { FeedItem } from '../types/api';
 
 const props = defineProps<{
   item: FeedItem;
+  infoOpen?: boolean;
+}>();
+
+defineEmits<{
+  'toggle-info': [];
 }>();
 
 const authStore = useAuthStore();
@@ -66,6 +91,18 @@ async function handleLike() {
   display: grid;
   gap: 0.88rem;
   justify-items: center;
+}
+
+.reel-action-rail__info-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.reel-action-rail__info-panel {
+  position: absolute;
+  bottom: -0.85rem;
+  left: calc(100% + 0.9rem);
+  z-index: 7;
 }
 
 .reel-action-rail__button {

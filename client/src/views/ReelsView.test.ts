@@ -81,9 +81,42 @@ vi.mock('../components/ReelActionRail.vue', async () => {
         item: {
           type: Object,
           required: true
+        },
+        infoOpen: {
+          type: Boolean,
+          default: false
         }
       },
-      template: '<div data-test="action-rail">{{ item.id }}</div>'
+      emits: ['toggle-info'],
+      template:
+        '<div data-test="action-rail" :data-open="infoOpen ? \'true\' : \'false\'">{{ item.id }}<button data-test="toggle-info" @click="$emit(\'toggle-info\')">toggle</button><slot name="info-panel" /></div>'
+    })
+  };
+});
+
+vi.mock('../components/ReelInfoSidebar.vue', async () => {
+  const { defineComponent } = await import('vue');
+
+  return {
+    default: defineComponent({
+      name: 'ReelInfoSidebar',
+      props: {
+        item: {
+          type: Object,
+          required: true
+        },
+        folder: {
+          type: Object,
+          default: null
+        },
+        open: {
+          type: Boolean,
+          default: false
+        }
+      },
+      emits: ['close'],
+      template:
+        '<aside data-test="info-sidebar">{{ item.id }}<button data-test="close-info" @click="$emit(\'close\')">close</button></aside>'
     })
   };
 });
@@ -200,7 +233,9 @@ describe('ReelsView', () => {
 
     expect(loadInitialSpy).toHaveBeenCalledTimes(1);
     expect(wrapper.find('[data-test="reel-deck"]').exists()).toBe(true);
-    expect(wrapper.get('[data-test="action-rail"]').text()).toBe('101');
+    expect(wrapper.get('[data-test="action-rail"]').text()).toContain('101');
+    expect(wrapper.get('[data-test="action-rail"]').attributes('data-open')).toBe('false');
+    expect(wrapper.find('[data-test="info-shell"]').exists()).toBe(false);
   });
 
   it('updates the active reel and action rail when the deck emits an active change', async () => {
@@ -214,7 +249,29 @@ describe('ReelsView', () => {
     await flushPromises();
 
     expect(reelsStore.activeReelId).toBe(202);
-    expect(wrapper.get('[data-test="action-rail"]').text()).toBe('202');
+    expect(wrapper.get('[data-test="action-rail"]').text()).toContain('202');
+  });
+
+  it('toggles the info sidebar from the action rail and can close it again', async () => {
+    const reelsStore = useReelsStore();
+    vi.spyOn(reelsStore, 'loadInitial').mockResolvedValue(undefined);
+
+    const wrapper = mount(ReelsView);
+    await flushPromises();
+
+    await wrapper.get('[data-test="toggle-info"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="action-rail"]').attributes('data-open')).toBe('true');
+    expect(wrapper.find('[data-test="info-shell"]').exists()).toBe(true);
+    expect(wrapper.get('[data-test="info-sidebar"]').text()).toContain('101');
+    expect(wrapper.find('button[aria-label="Next reel"]').exists()).toBe(true);
+
+    await wrapper.get('[data-test="close-info"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="action-rail"]').attributes('data-open')).toBe('false');
+    expect(wrapper.find('[data-test="info-shell"]').exists()).toBe(false);
   });
 
   it('delegates deck prefetch and fixed navigation controls', async () => {

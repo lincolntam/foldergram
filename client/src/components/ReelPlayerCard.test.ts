@@ -8,14 +8,24 @@ import ReelPlayerCard from './ReelPlayerCard.vue';
 
 vi.mock('vidstack/bundle', () => ({}));
 
+let nextPlayFailures = 0;
+
 class FakeMediaPlayerElement extends HTMLElement {
   muted = true;
   paused = true;
   playCallCount = 0;
   pauseCallCount = 0;
+  src: unknown = null;
 
   async play() {
     this.playCallCount += 1;
+
+    if (nextPlayFailures > 0) {
+      nextPlayFailures -= 1;
+      this.paused = true;
+      throw new Error('Autoplay blocked');
+    }
+
     this.paused = false;
   }
 
@@ -80,9 +90,20 @@ function getPlayerElement(wrapper: ReturnType<typeof mount>) {
   return wrapper.get('media-player').element as unknown as FakeMediaPlayerElement;
 }
 
+const globalStubs = {
+  Avatar: {
+    template: '<div data-test="avatar" />'
+  },
+  RouterLink: {
+    props: ['to'],
+    template: '<a data-test="folder-link"><slot /></a>'
+  }
+};
+
 describe('ReelPlayerCard', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    nextPlayFailures = 0;
     const appStore = useAppStore();
     appStore.$patch({
       videoMuted: true
@@ -98,11 +119,7 @@ describe('ReelPlayerCard', () => {
         active: true
       },
       global: {
-        stubs: {
-          Avatar: {
-            template: '<div data-test="avatar" />'
-          }
-        }
+        stubs: globalStubs
       }
     });
 
@@ -125,17 +142,14 @@ describe('ReelPlayerCard', () => {
         active: true
       },
       global: {
-        stubs: {
-          Avatar: {
-            template: '<div data-test="avatar" />'
-          }
-        }
+        stubs: globalStubs
       }
     });
 
     await flushPromises();
 
     const player = getPlayerElement(wrapper);
+    expect(wrapper.get('media-player').attributes('load')).toBe('eager');
     expect(player.playCallCount).toBeGreaterThanOrEqual(1);
     expect(player.paused).toBe(false);
     expect(wrapper.find('.reel-player-card__pause-indicator').exists()).toBe(false);
@@ -164,11 +178,7 @@ describe('ReelPlayerCard', () => {
         active: true
       },
       global: {
-        stubs: {
-          Avatar: {
-            template: '<div data-test="avatar" />'
-          }
-        }
+        stubs: globalStubs
       }
     });
 
@@ -191,11 +201,7 @@ describe('ReelPlayerCard', () => {
         active: true
       },
       global: {
-        stubs: {
-          Avatar: {
-            template: '<div data-test="avatar" />'
-          }
-        }
+        stubs: globalStubs
       }
     });
 
@@ -205,5 +211,74 @@ describe('ReelPlayerCard', () => {
     expect(appStore.videoMuted).toBe(false);
     expect(secondPlayer.muted).toBe(false);
     expect(nextWrapper.get('.reel-player-card__sound-button').attributes('aria-label')).toBe('Mute sound');
+  });
+
+  it('falls back to the original video when preview autoplay keeps failing', async () => {
+    vi.useFakeTimers();
+    nextPlayFailures = 4;
+
+    const wrapper = mount(ReelPlayerCard, {
+      props: {
+        item: createFeedItem(7),
+        folder: createFolder(),
+        active: true
+      },
+      global: {
+        stubs: globalStubs
+      }
+    });
+
+    await flushPromises();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    const player = getPlayerElement(wrapper);
+    expect((player.src as { src?: string } | null)?.src).toBe('/api/originals/7');
+    expect(player.playCallCount).toBeGreaterThan(1);
+
+    vi.useRealTimers();
+  });
+
+  it('falls back to visible loading when the reel is inactive', async () => {
+    const wrapper = mount(ReelPlayerCard, {
+      props: {
+        item: createFeedItem(6),
+        folder: createFolder(),
+        active: false
+      },
+      global: {
+        stubs: globalStubs
+      }
+    });
+
+    await flushPromises();
+
+    expect(wrapper.get('media-player').attributes('load')).toBe('visible');
+  });
+
+  it('makes the folder overlay clickable without toggling playback', async () => {
+    const wrapper = mount(ReelPlayerCard, {
+      props: {
+        item: createFeedItem(5),
+        folder: createFolder(),
+        active: true
+      },
+      global: {
+        stubs: globalStubs
+      }
+    });
+
+    await flushPromises();
+
+    const player = getPlayerElement(wrapper);
+    expect(player.pauseCallCount).toBe(0);
+    expect(wrapper.find('[data-test="folder-link"]').exists()).toBe(true);
+
+    await wrapper.get('[data-test="folder-link"]').trigger('click');
+    await flushPromises();
+
+    expect(player.pauseCallCount).toBe(0);
+    expect(wrapper.find('.reel-player-card__pause-indicator').exists()).toBe(false);
   });
 });
