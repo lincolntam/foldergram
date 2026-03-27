@@ -416,10 +416,7 @@ function createDailySeed(now = new Date()): number {
 }
 
 function getHighlightFeedOverlapImageIds(): Set<number> {
-  const total = imageRepository.countFeed();
-  const recentFeedItems = listDiversifiedModeItems(total, 1, HIGHLIGHT_FEED_OVERLAP_WINDOW, (offset, batchLimit) =>
-    imageRepository.listRecentCandidates(offset, batchLimit)
-  );
+  const recentFeedItems = imageRepository.listRecentCandidates(0, HIGHLIGHT_FEED_OVERLAP_WINDOW);
 
   return new Set(recentFeedItems.map((item) => item.id));
 }
@@ -661,9 +658,8 @@ export const galleryService = {
     }
 
     const total = imageRepository.countFeed();
-    const items = listDiversifiedModeItems(total, page, limit, (offset, batchLimit) =>
-      imageRepository.listRecentCandidates(offset, batchLimit)
-    );
+    const offset = (page - 1) * limit;
+    const items = imageRepository.listRecentCandidates(offset, limit);
 
     return {
       mode,

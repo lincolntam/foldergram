@@ -291,7 +291,7 @@ const feedModes: Array<{ id: FeedMode; label: string; description: string }> = [
   {
     id: 'recent',
     label: 'Recent',
-    description: 'Newest posts first, with lighter runs from the same app folder.'
+    description: 'Newest posts first.'
   },
   {
     id: 'rediscover',
