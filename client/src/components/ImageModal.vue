@@ -30,7 +30,7 @@
 
     <!-- Previous nav -->
     <RouterLink
-      v-if="image.previousImageId"
+      v-if="previousNavigationImageId"
       :class="[
         'inline-flex items-center justify-center w-[2.2rem] h-[2.2rem] rounded-full text-[#111] bg-white/88 shadow-[0_8px_20px_rgba(0,0,0,0.18)]',
         isModal
@@ -39,7 +39,7 @@
       ]"
       :to="{
         name: 'image',
-        params: { id: String(image.previousImageId) },
+        params: { id: String(previousNavigationImageId) },
         query: route.query,
       }"
       aria-label="Previous post"
@@ -58,7 +58,7 @@
 
     <!-- Next nav -->
     <RouterLink
-      v-if="image.nextImageId"
+      v-if="nextNavigationImageId"
       :class="[
         'inline-flex items-center justify-center w-[2.2rem] h-[2.2rem] rounded-full text-[#111] bg-white/88 shadow-[0_8px_20px_rgba(0,0,0,0.18)]',
         isModal
@@ -67,7 +67,7 @@
       ]"
       :to="{
         name: 'image',
-        params: { id: String(image.nextImageId) },
+        params: { id: String(nextNavigationImageId) },
         query: route.query,
       }"
       aria-label="Next post"
@@ -236,6 +236,7 @@
           <ResilientImage
             class="viewer__media-image"
             :src="image.previewUrl"
+            :fallback-src="image.originalUrl"
             :alt="image.filename"
             :width="image.width"
             :height="image.height"
@@ -733,6 +734,36 @@
   })
   const isModalSidebarCollapsible = computed(
     () => props.isModal === true && isSidebarCollapsible.value,
+  )
+  const isLikesNavigationContext = computed(() => {
+    if (props.isModal !== true || !appStore.imageModalBackgroundPath) {
+      return false
+    }
+
+    return router.resolve(appStore.imageModalBackgroundPath).name === "likes"
+  })
+  const likesNavigationIds = computed(() => {
+    if (!props.image || !isLikesNavigationContext.value) {
+      return null
+    }
+
+    const currentIndex = likesStore.items.findIndex(
+      item => item.id === props.image?.id,
+    )
+    if (currentIndex === -1) {
+      return null
+    }
+
+    return {
+      previousImageId: likesStore.items[currentIndex - 1]?.id ?? null,
+      nextImageId: likesStore.items[currentIndex + 1]?.id ?? null,
+    }
+  })
+  const previousNavigationImageId = computed(
+    () => likesNavigationIds.value?.previousImageId ?? props.image?.previousImageId ?? null,
+  )
+  const nextNavigationImageId = computed(
+    () => likesNavigationIds.value?.nextImageId ?? props.image?.nextImageId ?? null,
   )
   const isModalSidebarOverlayVisible = computed(
     () => isModalSidebarCollapsible.value && isSidebarExpanded.value,
@@ -1316,14 +1347,10 @@
   )
 
   async function navigateByDirection(direction: "previous" | "next") {
-    if (!props.image) {
-      return
-    }
-
     const targetId =
       direction === "next"
-        ? props.image.nextImageId
-        : props.image.previousImageId
+        ? nextNavigationImageId.value
+        : previousNavigationImageId.value
     if (!targetId) {
       return
     }
