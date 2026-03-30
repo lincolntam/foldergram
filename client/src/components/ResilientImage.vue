@@ -18,6 +18,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 const props = withDefaults(
   defineProps<{
     src: string | null;
+    fallbackSrc?: string | null;
     alt: string;
     width?: number;
     height?: number;
@@ -28,6 +29,7 @@ const props = withDefaults(
   }>(),
   {
     src: null,
+    fallbackSrc: null,
     loading: 'lazy',
     retryWhile: false,
     maxRetries: 8,
@@ -38,19 +40,28 @@ const props = withDefaults(
 const attempt = ref(0);
 const loaded = ref(false);
 const hiddenUntilRetry = ref(false);
+const usingFallback = ref(false);
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+const activeSrc = computed(() => {
+  if (usingFallback.value && props.fallbackSrc && props.fallbackSrc !== props.src) {
+    return props.fallbackSrc;
+  }
+
+  return props.src;
+});
+
 const resolvedSrc = computed(() => {
-  if (!props.src || hiddenUntilRetry.value) {
+  if (!activeSrc.value || hiddenUntilRetry.value) {
     return null;
   }
 
   if (attempt.value === 0) {
-    return props.src;
+    return activeSrc.value;
   }
 
-  const separator = props.src.includes('?') ? '&' : '?';
-  return `${props.src}${separator}retry=${attempt.value}`;
+  const separator = activeSrc.value.includes('?') ? '&' : '?';
+  return `${activeSrc.value}${separator}retry=${attempt.value}`;
 });
 
 function clearRetryTimer() {
@@ -65,6 +76,7 @@ function resetState() {
   attempt.value = 0;
   loaded.value = false;
   hiddenUntilRetry.value = false;
+  usingFallback.value = false;
 }
 
 function scheduleRetry() {
@@ -92,6 +104,14 @@ function handleLoad() {
 function handleError() {
   loaded.value = false;
 
+  if (!usingFallback.value && props.fallbackSrc && props.fallbackSrc !== props.src) {
+    clearRetryTimer();
+    attempt.value = 0;
+    hiddenUntilRetry.value = false;
+    usingFallback.value = true;
+    return;
+  }
+
   const canRetry = props.retryWhile || attempt.value < props.maxRetries;
   if (!canRetry) {
     hiddenUntilRetry.value = true;
@@ -102,7 +122,7 @@ function handleError() {
   scheduleRetry();
 }
 
-watch(() => props.src, resetState);
+watch(() => [props.src, props.fallbackSrc] as const, resetState);
 watch(
   () => props.retryWhile,
   (retryWhile) => {
