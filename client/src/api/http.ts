@@ -14,6 +14,7 @@ export class RequestError extends Error {
 export async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const headers = new Headers(init?.headers);
+  const isSafeRead = method === 'GET' || method === 'HEAD';
 
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     headers.set('x-foldergram-intent', '1');
@@ -21,6 +22,7 @@ export async function requestJson<T>(input: RequestInfo | URL, init?: RequestIni
 
   const response = await fetch(input, {
     ...init,
+    cache: init?.cache ?? (isSafeRead ? 'no-store' : undefined),
     credentials: 'same-origin',
     headers
   });

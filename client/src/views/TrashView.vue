@@ -47,7 +47,7 @@
         {{ actionError }}
       </p>
 
-      <section v-if="trashStore.loading && trashStore.items.length === 0" class="card p-8 text-center">
+      <section v-if="trashStore.loading && !trashStore.initialized && trashStore.items.length === 0" class="card p-8 text-center">
         <p class="m-0 text-muted">Loading trash...</p>
       </section>
       <EmptyState
@@ -243,10 +243,19 @@ async function refreshVisibleData() {
   ]);
 }
 
+function refreshVisibleDataInBackground() {
+  void refreshVisibleData().catch((error) => {
+    actionError.value = error instanceof Error ? error.message : 'Unable to refresh the updated library state.';
+  });
+}
+
 async function processSelection(action: 'restore' | 'delete') {
   const ids = [...selectedIds.value];
   if (ids.length === 0) {
-    return;
+    return {
+      succeededCount: 0,
+      failedCount: 0
+    };
   }
 
   processing.value = true;
@@ -270,7 +279,6 @@ async function processSelection(action: 'restore' | 'delete') {
   if (succeeded.length > 0) {
     trashStore.removeItems(succeeded);
     selectedIds.value = selectedIds.value.filter((id) => !succeeded.includes(id));
-    await refreshVisibleData();
   }
 
   if (failedCount > 0) {
@@ -278,20 +286,38 @@ async function processSelection(action: 'restore' | 'delete') {
   }
 
   processing.value = false;
+
+  if (succeeded.length > 0) {
+    refreshVisibleDataInBackground();
+  }
+
+  return {
+    succeededCount: succeeded.length,
+    failedCount
+  };
 }
 
 async function handleRestore() {
-  await processSelection('restore');
-  restoreConfirmOpen.value = false;
+  const result = await processSelection('restore');
+  if (result.succeededCount > 0 || result.failedCount === 0) {
+    restoreConfirmOpen.value = false;
+  }
 }
 
 async function handlePermanentDelete() {
-  await processSelection('delete');
-  permanentConfirmOpen.value = false;
+  const result = await processSelection('delete');
+  if (result.succeededCount > 0 || result.failedCount === 0) {
+    permanentConfirmOpen.value = false;
+  }
 }
 
 onMounted(async () => {
   if (appStore.isLibraryUnavailable) {
+    return;
+  }
+
+  if (trashStore.initialized) {
+    void trashStore.loadInitial(true);
     return;
   }
 

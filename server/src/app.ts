@@ -8,8 +8,16 @@ import { requireApiAuthentication, requireMediaAuthentication } from './middlewa
 import { requireTrustedMutationRequest } from './middleware/csrf-protection.js';
 import { blockPublicDemoMutations } from './middleware/public-demo-mode.js';
 import { apiRouter } from './routes/api.js';
+import { authService } from './services/auth-service.js';
 import { lazyThumbnailsRouter, lazyPreviewsRouter } from './routes/lazy-derivatives.js';
 import { createProtectedStaticOptions } from './utils/media-response.js';
+
+export function applyApiNoStoreHeaders(response: Pick<express.Response, 'setHeader'>) {
+  authService.setNoStoreHeaders(response as express.Response);
+  if (authService.isEnabled()) {
+    response.setHeader('Vary', 'Cookie');
+  }
+}
 
 export function createApp() {
   const app = express();
@@ -24,6 +32,10 @@ export function createApp() {
     app.use('/previews', requireMediaAuthentication, express.static(appConfig.previewsDir, createProtectedStaticOptions()));
   }
 
+  app.use('/api', (_request, response, next) => {
+    applyApiNoStoreHeaders(response);
+    next();
+  });
   app.use('/api', blockPublicDemoMutations, requireTrustedMutationRequest, requireApiAuthentication, apiRouter);
 
   if (appConfig.nodeEnv === 'production') {

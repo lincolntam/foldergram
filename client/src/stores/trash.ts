@@ -51,12 +51,31 @@ export const useTrashStore = defineStore('trash', {
         return;
       }
 
-      this.items = [];
+      const preserveExistingState = force && this.initialized;
+
       this.page = 1;
       this.hasMore = true;
+
+      if (!preserveExistingState) {
+        this.items = [];
+        this.error = null;
+        this.initialized = false;
+      }
+
+      this.loading = true;
       this.error = null;
-      this.initialized = false;
-      await this.loadMore();
+
+      try {
+        const payload = await fetchTrashImages(this.page, this.limit);
+        this.items = payload.items;
+        this.page += 1;
+        this.hasMore = payload.hasMore;
+        this.initialized = true;
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Unable to load trash';
+      } finally {
+        this.loading = false;
+      }
     },
 
     async loadMore() {
