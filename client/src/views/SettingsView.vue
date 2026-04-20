@@ -18,6 +18,9 @@
           <span class="eyebrow text-[#9f6a00]">Scan Needs Attention</span>
           <h2 class="m-0 text-[1.1rem]">The last scan completed with errors</h2>
           <p class="m-0 text-muted">{{ scanErrorNoticeMessage }}</p>
+          <p v-if="scanErrorNoticeDetail" class="m-0 font-mono text-[0.8rem] leading-[1.5] text-[#7c5800] break-all">
+            {{ scanErrorNoticeDetail }}
+          </p>
         </div>
         <button
           class="inline-flex h-9 w-9 items-center justify-center rounded-full border-0 bg-[rgba(159,106,0,0.08)] text-[#9f6a00] cursor-pointer transition-colors duration-180 hover:bg-[rgba(159,106,0,0.14)]"
@@ -1708,7 +1711,34 @@ const showIgnoredRootMediaNotice = computed(() => {
   return Date.now() >= dismissed.dismissedUntil;
 });
 const scanErrorNoticeMessage = computed(() => {
-  return 'Some media failed during the last run. Scan the library again to retry any missed files and derivative generation.';
+  const errorText = lastCompletedScan.value?.error_text?.trim() ?? '';
+  if (errorText.length === 0) {
+    return 'Some media failed during the last run. Scan the library again to retry any missed files and derivative generation.';
+  }
+
+  if (/spawn ffprobe ENOENT/i.test(errorText) || /spawn ffmpeg ENOENT/i.test(errorText)) {
+    return 'Video processing tools are missing from the server environment. Install FFmpeg so scans can read video metadata and generate video derivatives.';
+  }
+
+  return 'Some media failed during the last run. Review the sample error below, then scan the library again to retry any missed files and derivative generation.';
+});
+const scanErrorNoticeDetail = computed(() => {
+  const errorText = lastCompletedScan.value?.error_text?.trim() ?? '';
+  if (errorText.length === 0) {
+    return null;
+  }
+
+  const [firstLine] = errorText.split('\n');
+  const remainingCount = errorText.split('\n').filter((line) => line.trim().length > 0).length - 1;
+  if (!firstLine) {
+    return null;
+  }
+
+  if (remainingCount <= 0) {
+    return firstLine;
+  }
+
+  return `${firstLine} (+${remainingCount} more)`;
 });
 const ignoredRootMediaNoticeMessage = computed(() => {
   const supportedFileLabel = ignoredRootMediaCount.value === 1 ? 'supported file is' : 'supported files are';
