@@ -12,6 +12,7 @@ import {
   getPreviewRelativePath,
   getThumbnailRelativePath
 } from '../src/utils/image-utils.js';
+import { LIBRARY_REBUILD_REQUIRED_SETTING_KEY } from '../src/constants/app-setting-keys.js';
 
 type AppConfigModule = typeof import('../src/config/env.js');
 type AuthServiceModule = typeof import('../src/services/auth-service.js');
@@ -39,6 +40,7 @@ describe.sequential('DERIVATIVE_MODE lazy behavior', () => {
   let folderRepository: RepositoriesModule['folderRepository'];
   let imageRepository: RepositoriesModule['imageRepository'];
   let maintenanceRepository: RepositoriesModule['maintenanceRepository'];
+  let appSettingsRepository: RepositoriesModule['appSettingsRepository'];
 
   async function reset(derivativeMode = 'lazy', scanDerivativeConcurrency = 4) {
     generateThumbnailDerivativeMock.mockReset();
@@ -72,7 +74,7 @@ describe.sequential('DERIVATIVE_MODE lazy behavior', () => {
     ({ authService } = await import('../src/services/auth-service.js'));
     ({ lazyThumbnailsRouter, lazyPreviewsRouter } = await import('../src/routes/lazy-derivatives.js'));
     ({ scannerService } = await import('../src/services/scanner-service.js'));
-    ({ folderRepository, imageRepository, maintenanceRepository } = await import('../src/db/repositories.js'));
+    ({ folderRepository, imageRepository, maintenanceRepository, appSettingsRepository } = await import('../src/db/repositories.js'));
 
     await Promise.all([
       fs.mkdir(appConfig.galleryRoot, { recursive: true }),
@@ -251,10 +253,13 @@ describe.sequential('DERIVATIVE_MODE lazy behavior', () => {
     filename: string,
     mtimeMs: number,
     playbackStrategy: PlaybackStrategy,
-    durationMs: number | null = null
+    durationMs: number | null = null,
+    options: { storedGalleryRoot?: string } = {}
   ) {
     const relativePath = `${folder.folder_path}/${filename}`;
-    const absolutePath = path.join(appConfig.galleryRoot, relativePath);
+    const absolutePath = options.storedGalleryRoot
+      ? path.join(options.storedGalleryRoot, relativePath)
+      : path.join(appConfig.galleryRoot, relativePath);
     const extension = path.extname(filename).toLowerCase();
     const mediaType = getMediaTypeFromExtension(extension);
     const previewRelativePath = getPreviewRelativePath(relativePath, mediaType);
@@ -369,6 +374,27 @@ describe.sequential('DERIVATIVE_MODE lazy behavior', () => {
     expect(generateThumbnailDerivativeMock).toHaveBeenCalledOnce();
   });
 
+  it('generates a missing thumbnail from the current gallery root when the cached absolute path is stale', async () => {
+    await reset('lazy');
+
+    maintenanceRepository.resetLibraryIndex();
+    const folder = folderRepository.upsert({ slug: 'relocated-thumbs', name: 'Relocated Thumbs', folderPath: 'relocated-thumbs' });
+    await createSourceFile('relocated-thumbs/photo.jpg');
+    const image = createIndexedMedia(folder, 'photo.jpg', 2_200, 'preview', null, {
+      storedGalleryRoot: path.join(tempRoot, 'old-gallery-root')
+    });
+
+    const response = await dispatchRoute(lazyThumbnailsRouter, `/${encodeRelativePath(image.thumbnail_path)}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(generateThumbnailDerivativeMock).toHaveBeenCalledWith(
+      path.join(appConfig.galleryRoot, image.relative_path),
+      image.relative_path,
+      false,
+      { thumbnailPath: image.thumbnail_path }
+    );
+  });
+
   it('uses private browser caching headers for protected derivative responses', async () => {
     await reset('lazy');
 
@@ -395,6 +421,25 @@ describe.sequential('DERIVATIVE_MODE lazy behavior', () => {
     expect(response.body).toBe('image-preview:photo.webp');
     expect(writeImagePreviewMock).toHaveBeenCalledOnce();
     expect(writeVideoPreviewMock).not.toHaveBeenCalled();
+  });
+
+  it('generates a missing image preview from the current gallery root when the cached absolute path is stale', async () => {
+    await reset('lazy');
+
+    maintenanceRepository.resetLibraryIndex();
+    const folder = folderRepository.upsert({ slug: 'relocated-previews', name: 'Relocated Previews', folderPath: 'relocated-previews' });
+    await createSourceFile('relocated-previews/photo.jpg');
+    const image = createIndexedMedia(folder, 'photo.jpg', 3_200, 'preview', null, {
+      storedGalleryRoot: path.join(tempRoot, 'old-gallery-root')
+    });
+
+    const response = await dispatchRoute(lazyPreviewsRouter, `/${encodeRelativePath(image.preview_path)}`);
+
+    expect(response.statusCode).toBe(200);
+    expect(writeImagePreviewMock).toHaveBeenCalledWith(
+      path.join(appConfig.galleryRoot, image.relative_path),
+      path.join(appConfig.previewsDir, image.preview_path)
+    );
   });
 
   it('deduplicates concurrent requests for the same missing video preview', async () => {
@@ -495,6 +540,21 @@ describe.sequential('DERIVATIVE_MODE lazy behavior', () => {
     expect(response.statusCode).toBe(404);
     expect(response.body).toEqual({ message: 'Derivative not found.' });
     expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('does not generate missing derivatives while a library rebuild is required', async () => {
+    await reset('lazy');
+
+    maintenanceRepository.resetLibraryIndex();
+    const folder = folderRepository.upsert({ slug: 'blocked', name: 'Blocked', folderPath: 'blocked' });
+    const image = createIndexedMedia(folder, 'photo.jpg', 4_700, 'preview');
+    appSettingsRepository.set(LIBRARY_REBUILD_REQUIRED_SETTING_KEY, '1');
+
+    const response = await dispatchRoute(lazyThumbnailsRouter, `/${encodeRelativePath(image.thumbnail_path)}`);
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({ message: 'Library rebuild required before generating derivatives.' });
+    expect(generateThumbnailDerivativeMock).not.toHaveBeenCalled();
   });
 
   it('does not emit a JSON error after sendFile fails once headers are already sent', async () => {

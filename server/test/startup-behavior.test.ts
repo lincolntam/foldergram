@@ -9,6 +9,13 @@ import {
   getPreviewRelativePath,
   getThumbnailRelativePath
 } from '../src/utils/image-utils.js';
+import {
+  LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY,
+  LIBRARY_REBUILD_REQUIRED_SETTING_KEY,
+  PREVIOUS_GALLERY_ROOT_SETTING_KEY
+} from '../src/constants/app-setting-keys.js';
+import { getPreviewPathForAssetKey, getThumbnailPathForAssetKey } from '../src/utils/derivative-paths.js';
+import { normalizePath } from '../src/utils/path-utils.js';
 
 type AppConfigModule = typeof import('../src/config/env.js');
 type ScannerServiceModule = typeof import('../src/services/scanner-service.js');
@@ -26,6 +33,7 @@ describe.sequential('startup behavior', () => {
   let imageRepository: RepositoriesModule['imageRepository'];
   let maintenanceRepository: RepositoriesModule['maintenanceRepository'];
   let scanRunRepository: RepositoriesModule['scanRunRepository'];
+  let appSettingsRepository: RepositoriesModule['appSettingsRepository'];
 
   beforeAll(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'insta-startup-behavior-'));
@@ -55,7 +63,13 @@ describe.sequential('startup behavior', () => {
 
     ({ appConfig } = await import('../src/config/env.js'));
     ({ scannerService } = await import('../src/services/scanner-service.js'));
-    ({ folderRepository, imageRepository, maintenanceRepository, scanRunRepository } = await import('../src/db/repositories.js'));
+    ({
+      folderRepository,
+      imageRepository,
+      maintenanceRepository,
+      scanRunRepository,
+      appSettingsRepository
+    } = await import('../src/db/repositories.js'));
 
     await Promise.all([
       fs.mkdir(appConfig.galleryRoot, { recursive: true }),
@@ -181,11 +195,129 @@ describe.sequential('startup behavior', () => {
     expect(migrated?.preview_path).not.toBe(previewPath);
   });
 
+  it('validates a moved gallery root and refreshes cached absolute paths without requiring a rebuild', async () => {
+    const oldGalleryRoot = path.join(tempRoot, 'old-gallery-root');
+    const indexed = await createIndexedRelocationMedia({
+      relativePath: 'relocated/photo-1.jpg',
+      storedGalleryRoot: oldGalleryRoot
+    });
+    appSettingsRepository.set(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY, oldGalleryRoot);
+
+    const action = scannerService.handleStartup('startup');
+
+    expect(action).toBe('idle');
+    expect(appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY)).toBeNull();
+    expect(appSettingsRepository.get(PREVIOUS_GALLERY_ROOT_SETTING_KEY)).toBeNull();
+    expect(appSettingsRepository.get(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY)).toBe(normalizePath(appConfig.galleryRoot));
+
+    const refreshed = imageRepository.getByRelativePath(indexed.relative_path);
+    expect(refreshed?.absolute_path).toBe(path.join(appConfig.galleryRoot, indexed.relative_path));
+  });
+
+  it('requires a rebuild when a moved gallery root is missing an indexed active file', async () => {
+    const oldGalleryRoot = path.join(tempRoot, 'old-gallery-root');
+    await createIndexedRelocationMedia({
+      relativePath: 'missing/photo-1.jpg',
+      storedGalleryRoot: oldGalleryRoot,
+      skipSourceFile: true
+    });
+    appSettingsRepository.set(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY, oldGalleryRoot);
+
+    const action = scannerService.handleStartup('startup');
+
+    expect(action).toBe('blocked');
+    expect(appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY)).toBe('1');
+    expect(appSettingsRepository.get(PREVIOUS_GALLERY_ROOT_SETTING_KEY)).toBe(normalizePath(oldGalleryRoot));
+  });
+
+  it('requires a rebuild when a moved gallery root has a size mismatch', async () => {
+    const oldGalleryRoot = path.join(tempRoot, 'old-gallery-root');
+    await createIndexedRelocationMedia({
+      relativePath: 'mismatch/photo-1.jpg',
+      storedGalleryRoot: oldGalleryRoot,
+      indexedFileSizeOffset: 1
+    });
+    appSettingsRepository.set(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY, oldGalleryRoot);
+
+    const action = scannerService.handleStartup('startup');
+
+    expect(action).toBe('blocked');
+    expect(appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY)).toBe('1');
+  });
+
+  it('requires a rebuild when a moved gallery root has an mtime mismatch', async () => {
+    const oldGalleryRoot = path.join(tempRoot, 'old-gallery-root');
+    await createIndexedRelocationMedia({
+      relativePath: 'mtime/photo-1.jpg',
+      storedGalleryRoot: oldGalleryRoot,
+      indexedMtimeMs: Date.parse('2026-03-08T12:00:00.000Z')
+    });
+    appSettingsRepository.set(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY, oldGalleryRoot);
+
+    const action = scannerService.handleStartup('startup');
+
+    expect(action).toBe('blocked');
+    expect(appSettingsRepository.get(LIBRARY_REBUILD_REQUIRED_SETTING_KEY)).toBe('1');
+  });
+
   async function createSourceFile(relativePath: string): Promise<string> {
     const absolutePath = path.join(appConfig.galleryRoot, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, `source:${relativePath}`);
     return absolutePath;
+  }
+
+  async function createIndexedRelocationMedia(options: {
+    relativePath: string;
+    storedGalleryRoot: string;
+    indexedFileSizeOffset?: number;
+    indexedMtimeMs?: number;
+    skipSourceFile?: boolean;
+  }) {
+    const folderPath = path.posix.dirname(options.relativePath);
+    const filename = path.posix.basename(options.relativePath);
+    const extension = path.extname(filename).toLowerCase();
+    const mediaType = getMediaTypeFromExtension(extension);
+    const assetKey = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const contents = `source:${options.relativePath}`;
+    const actualMtimeMs = Date.parse('2026-03-07T12:00:00.000Z');
+    const sourcePath = path.join(appConfig.galleryRoot, options.relativePath);
+    const folder = folderRepository.upsert({
+      slug: folderPath.replaceAll('/', '-'),
+      name: path.posix.basename(folderPath),
+      folderPath
+    });
+
+    if (!options.skipSourceFile) {
+      await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+      await fs.writeFile(sourcePath, contents);
+      await fs.utimes(sourcePath, new Date(actualMtimeMs), new Date(actualMtimeMs));
+    }
+
+    return imageRepository.upsert({
+      folderId: folder.id,
+      assetKey,
+      filename,
+      extension,
+      relativePath: options.relativePath,
+      absolutePath: path.join(options.storedGalleryRoot, options.relativePath),
+      fileSize: Buffer.byteLength(contents) + (options.indexedFileSizeOffset ?? 0),
+      width: 1600,
+      height: 1200,
+      mediaType,
+      mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+      durationMs: mediaType === 'video' ? 12_000 : null,
+      fingerprint: `${options.relativePath}:relocation`,
+      mtimeMs: options.indexedMtimeMs ?? actualMtimeMs,
+      firstSeenAt: '2026-03-07T12:00:00.000Z',
+      sortTimestamp: actualMtimeMs,
+      takenAt: actualMtimeMs,
+      takenAtSource: 'mtime',
+      exifJson: mediaType === 'image' ? '{}' : null,
+      thumbnailPath: getThumbnailPathForAssetKey(assetKey),
+      previewPath: getPreviewPathForAssetKey(assetKey, mediaType),
+      playbackStrategy: 'preview'
+    });
   }
 });
 

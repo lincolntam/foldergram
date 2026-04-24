@@ -1,5 +1,5 @@
 import { databaseManager } from './database.js';
-import { normalizePath } from '../utils/path-utils.js';
+import { normalizePath, safeJoin } from '../utils/path-utils.js';
 import type {
   AppSettingRecord,
   FeedImage,
@@ -1436,6 +1436,28 @@ export const imageRepository = {
     return database
       .prepare('SELECT * FROM images WHERE is_deleted = 0 ORDER BY folder_id ASC, sort_timestamp DESC, id DESC')
       .all() as unknown as ImageRecord[];
+  },
+
+  refreshAbsolutePathsForGalleryRoot(galleryRoot: string): number {
+    const rows = database
+      .prepare('SELECT id, relative_path, absolute_path FROM images WHERE is_deleted = 0 ORDER BY id ASC')
+      .all() as Array<Pick<ImageRecord, 'id' | 'relative_path' | 'absolute_path'>>;
+    const update = database.prepare('UPDATE images SET absolute_path = ?, updated_at = ? WHERE id = ?');
+    const updatedAt = nowIso();
+    let refreshed = 0;
+
+    for (const row of rows) {
+      const nextAbsolutePath = safeJoin(galleryRoot, row.relative_path);
+
+      if (normalizePath(row.absolute_path) === normalizePath(nextAbsolutePath)) {
+        continue;
+      }
+
+      const result = update.run(nextAbsolutePath, updatedAt, row.id);
+      refreshed += Number(result.changes ?? 0);
+    }
+
+    return refreshed;
   },
 
   listByIdRange(afterId: number, limit: number): ImageRecord[] {

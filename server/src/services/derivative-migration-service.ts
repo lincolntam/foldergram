@@ -11,6 +11,7 @@ import { appConfig } from '../config/env.js';
 import { appSettingsRepository, imageRepository } from '../db/repositories.js';
 import type { ImageRecord } from '../types/models.js';
 import { getMediaTypeFromExtension, getPreviewRelativePath, getThumbnailRelativePath } from '../utils/image-utils.js';
+import { resolveOriginalPath } from '../utils/media-paths.js';
 import {
   DERIVATIVE_STORAGE_LAYOUT_VERSION,
   LEGACY_DERIVATIVE_STORAGE_LAYOUT_VERSIONS,
@@ -524,12 +525,19 @@ class DerivativeMigrationService {
 
     const thumbnailAbsolutePath = safeJoin(appConfig.thumbnailsDir, targetThumbnailPath);
     const previewAbsolutePath = safeJoin(appConfig.previewsDir, targetPreviewPath);
-    const sourceExists = await fileExists(row.absolute_path);
+    let sourcePath: string | null = null;
+    try {
+      sourcePath = resolveOriginalPath(row.relative_path);
+    } catch {
+      sourcePath = null;
+    }
+
+    const sourceExists = sourcePath ? await fileExists(sourcePath) : false;
     const thumbnailExistsBeforeGenerate = await fileExists(thumbnailAbsolutePath);
     const previewExistsBeforeGenerate = await fileExists(previewAbsolutePath);
 
-    if ((!thumbnailExistsBeforeGenerate || !previewExistsBeforeGenerate) && sourceExists) {
-      const derivatives = await generateDerivatives(row.absolute_path, row.relative_path, false, {
+    if ((!thumbnailExistsBeforeGenerate || !previewExistsBeforeGenerate) && sourcePath && sourceExists) {
+      const derivatives = await generateDerivatives(sourcePath, row.relative_path, false, {
         thumbnailPath: targetThumbnailPath,
         previewPath: targetPreviewPath
       });

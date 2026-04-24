@@ -207,6 +207,29 @@ describe.sequential('thumbnail-only rebuild', () => {
     expect(imageRepository.getByRelativePath('broken/clip-missing.mp4')?.is_deleted).toBe(0);
   });
 
+  it('rebuilds thumbnails from the current gallery root when cached absolute paths are stale', async () => {
+    await createCompletedScanRun({
+      scanned_files: 1,
+      new_files: 0,
+      updated_files: 0,
+      removed_files: 0
+    });
+    const oldGalleryRoot = path.join(tempRoot, 'old-gallery-root');
+    const indexed = await createIndexedFolder('relocated', [
+      { filename: 'photo-1.jpg', storedGalleryRoot: oldGalleryRoot }
+    ]);
+
+    const lastScan = await scannerService.rebuildThumbnails('relocated');
+
+    expect(lastScan?.status).toBe('completed');
+    expect(generateThumbnailDerivativeMock).toHaveBeenCalledWith(
+      path.join(appConfig.galleryRoot, indexed.images[0]!.relative_path),
+      indexed.images[0]!.relative_path,
+      true,
+      { thumbnailPath: indexed.images[0]!.thumbnail_path }
+    );
+  });
+
   it('refuses thumbnail rebuilds when a full library rebuild is required', async () => {
     appSettingsRepository.set(libraryRebuildRequiredSettingKey, '1');
 
@@ -218,7 +241,7 @@ describe.sequential('thumbnail-only rebuild', () => {
 
   async function createIndexedFolder(
     relativeFolderPath: string,
-    entries: Array<{ filename: string; missingSource?: boolean; like?: boolean }>
+    entries: Array<{ filename: string; missingSource?: boolean; like?: boolean; storedGalleryRoot?: string }>
   ): Promise<{
     folder: FolderRecord;
     images: ImageRecord[];
@@ -238,7 +261,10 @@ describe.sequential('thumbnail-only rebuild', () => {
 
     for (const [index, entry] of entries.entries()) {
       const relativePath = `${relativeFolderPath}/${entry.filename}`;
-      const absolutePath = path.join(appConfig.galleryRoot, relativePath);
+      const sourceAbsolutePath = path.join(appConfig.galleryRoot, relativePath);
+      const absolutePath = entry.storedGalleryRoot
+        ? path.join(entry.storedGalleryRoot, relativePath)
+        : sourceAbsolutePath;
       const extension = path.extname(entry.filename).toLowerCase();
       const mediaType = getMediaTypeFromExtension(extension);
       const thumbnailRelativePath = getThumbnailRelativePath(relativePath);
@@ -250,8 +276,8 @@ describe.sequential('thumbnail-only rebuild', () => {
       const mtimeMs = 1_700_000_000_000 + index;
 
       if (!entry.missingSource) {
-        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-        await fs.writeFile(absolutePath, sourceContents);
+        await fs.mkdir(path.dirname(sourceAbsolutePath), { recursive: true });
+        await fs.writeFile(sourceAbsolutePath, sourceContents);
       }
 
       await fs.mkdir(path.dirname(thumbnailPath), { recursive: true });

@@ -24,6 +24,7 @@ import { deserializeImageExifData } from '../utils/exif-utils.js';
 import { buildMonthDayKey, countFeedBursts, diversifyFeedCandidates, groupFeedBursts, listMonthDayKeysAroundDate } from '../utils/feed-utils.js';
 import { shouldPreferMomentRail, type FeedRailKind } from '../utils/feed-rail-utils.js';
 import { countSupportedRootMediaFiles } from '../utils/gallery-root-utils.js';
+import { resolveOriginalPath } from '../utils/media-paths.js';
 import { getPathBreadcrumb } from '../utils/path-utils.js';
 import { buildReelQueue, shuffleReelCandidates, type ReelAffinitySignals } from '../utils/reels-utils.js';
 import { parseTreatStoriesAsFoldersSetting, serializeTreatStoriesAsFoldersSetting } from '../utils/stories-utils.js';
@@ -214,7 +215,7 @@ function mapPlaceSummaryFromRow(image: PlaceRowFields) {
 }
 
 function resolveOriginalMediaFile(id: number): { path: string; filename: string } | null {
-  if (!storageService.getState().libraryAvailable) {
+  if (!storageService.getState().libraryAvailable || scannerService.isLibraryRebuildRequired()) {
     return null;
   }
 
@@ -223,7 +224,13 @@ function resolveOriginalMediaFile(id: number): { path: string; filename: string 
     return null;
   }
 
-  const resolvedPath = resolveWithinRoot(appConfig.galleryRoot, detail.absolute_path);
+  let resolvedPath: string;
+  try {
+    resolvedPath = resolveOriginalPath(detail.relative_path);
+  } catch {
+    return null;
+  }
+
   if (!resolvedPath || !fs.existsSync(resolvedPath)) {
     return null;
   }
@@ -232,6 +239,14 @@ function resolveOriginalMediaFile(id: number): { path: string; filename: string 
     path: resolvedPath,
     filename: detail.filename
   };
+}
+
+function resolveIndexedOriginalPath(relativePath: string): string | null {
+  try {
+    return resolveOriginalPath(relativePath);
+  } catch {
+    return null;
+  }
 }
 
 function resolveWithinRoot(rootPath: string, targetPath: string): string | null {
@@ -1588,7 +1603,7 @@ export const galleryService = {
   },
 
   async deleteImage(id: number) {
-    if (!storageService.getState().libraryAvailable) {
+    if (!storageService.getState().libraryAvailable || scannerService.isLibraryRebuildRequired()) {
       return null;
     }
 
@@ -1602,7 +1617,7 @@ export const galleryService = {
       return null;
     }
 
-    const originalPath = resolveWithinRoot(appConfig.galleryRoot, imageRecord.absolute_path);
+    const originalPath = resolveIndexedOriginalPath(imageRecord.relative_path);
     const thumbnailPath = resolveStoredPathWithinRoot(appConfig.thumbnailsDir, imageRecord.thumbnail_path, 'thumbnail');
     const previewPath = resolveStoredPathWithinRoot(appConfig.previewsDir, imageRecord.preview_path, 'preview');
 
@@ -1630,7 +1645,7 @@ export const galleryService = {
   },
 
   async deleteFolder(slug: string, options: DeleteFolderOptions = {}) {
-    if (!storageService.getState().libraryAvailable) {
+    if (!storageService.getState().libraryAvailable || scannerService.isLibraryRebuildRequired()) {
       return null;
     }
 
@@ -1680,7 +1695,7 @@ export const galleryService = {
 
     await Promise.all(
       images.map(async (imageRecord) => {
-        const originalPath = resolveWithinRoot(appConfig.galleryRoot, imageRecord.absolute_path);
+        const originalPath = resolveIndexedOriginalPath(imageRecord.relative_path);
         const thumbnailPath = resolveStoredPathWithinRoot(appConfig.thumbnailsDir, imageRecord.thumbnail_path, 'thumbnail');
         const previewPath = resolveStoredPathWithinRoot(appConfig.previewsDir, imageRecord.preview_path, 'preview');
 

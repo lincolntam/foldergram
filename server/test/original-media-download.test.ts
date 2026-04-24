@@ -12,6 +12,7 @@ import {
   getPreviewRelativePath,
   getThumbnailRelativePath
 } from '../src/utils/image-utils.js';
+import { LIBRARY_REBUILD_REQUIRED_SETTING_KEY } from '../src/constants/app-setting-keys.js';
 
 type ApiModule = typeof import('../src/routes/api.js');
 type EnvModule = typeof import('../src/config/env.js');
@@ -43,6 +44,7 @@ describe.sequential('original media route download behavior', () => {
   let folderRepository: RepositoriesModule['folderRepository'];
   let imageRepository: RepositoriesModule['imageRepository'];
   let maintenanceRepository: RepositoriesModule['maintenanceRepository'];
+  let appSettingsRepository: RepositoriesModule['appSettingsRepository'];
 
   beforeAll(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'insta-original-media-download-'));
@@ -62,7 +64,7 @@ describe.sequential('original media route download behavior', () => {
     vi.resetModules();
     ({ appConfig } = await import('../src/config/env.js'));
     ({ apiRouter } = await import('../src/routes/api.js'));
-    ({ folderRepository, imageRepository, maintenanceRepository } = await import('../src/db/repositories.js'));
+    ({ folderRepository, imageRepository, maintenanceRepository, appSettingsRepository } = await import('../src/db/repositories.js'));
 
     await Promise.all([
       fs.mkdir(appConfig.galleryRoot, { recursive: true }),
@@ -120,6 +122,95 @@ describe.sequential('original media route download behavior', () => {
     expect(response.status).not.toHaveBeenCalled();
   });
 
+  it('resolves originals from the current gallery root when cached absolute paths are stale', async () => {
+    const folder = folderRepository.upsert({ slug: 'album-relocated', name: 'Album Relocated', folderPath: 'album-relocated' });
+    const oldGalleryRoot = path.join(tempRoot, 'old-gallery-root');
+    const image = await createIndexedMedia(folder, 'photo.jpg', 2_500, 'preview', null, {
+      storedGalleryRoot: oldGalleryRoot
+    });
+    const handler = getRouteHandler('/originals/:id', 'get');
+    const response = createResponse();
+
+    handler(
+      {
+        params: { id: String(image.id) },
+        query: {}
+      } as unknown as express.Request,
+      response as unknown as express.Response,
+      vi.fn()
+    );
+
+    expect(response.sendFile).toHaveBeenCalledWith(path.join(appConfig.galleryRoot, image.relative_path));
+    expect(response.sendFile).not.toHaveBeenCalledWith(image.absolute_path);
+    expect(response.status).not.toHaveBeenCalled();
+  });
+
+  it('does not serve an indexed original path that would escape the current gallery root', async () => {
+    const folder = folderRepository.upsert({ slug: 'album-traversal', name: 'Album Traversal', folderPath: 'album-traversal' });
+    const outsidePath = path.join(tempRoot, 'outside.jpg');
+    await fs.writeFile(outsidePath, 'outside');
+    const image = imageRepository.upsert({
+      folderId: folder.id,
+      filename: 'outside.jpg',
+      extension: '.jpg',
+      relativePath: '../outside.jpg',
+      absolutePath: outsidePath,
+      fileSize: 7,
+      width: 1280,
+      height: 960,
+      mediaType: 'image',
+      mimeType: 'image/jpeg',
+      durationMs: null,
+      fingerprint: createFingerprint('../outside.jpg', 7, 3_000),
+      mtimeMs: 3_000,
+      firstSeenAt: '2026-01-01T00:00:00.000Z',
+      sortTimestamp: 3_000,
+      takenAt: 3_000,
+      takenAtSource: 'mtime',
+      exifJson: '{}',
+      thumbnailPath: getThumbnailRelativePath('../outside.jpg'),
+      previewPath: getPreviewRelativePath('../outside.jpg', 'image'),
+      playbackStrategy: 'preview'
+    });
+    const handler = getRouteHandler('/originals/:id', 'get');
+    const response = createResponse();
+
+    handler(
+      {
+        params: { id: String(image.id) },
+        query: {}
+      } as unknown as express.Request,
+      response as unknown as express.Response,
+      vi.fn()
+    );
+
+    expect(response.status).toHaveBeenCalledWith(404);
+    expect(response.sendFile).not.toHaveBeenCalled();
+    expect(response.download).not.toHaveBeenCalled();
+  });
+
+  it('does not serve originals while a library rebuild is required after failed relocation', async () => {
+    const folder = folderRepository.upsert({ slug: 'album-blocked', name: 'Album Blocked', folderPath: 'album-blocked' });
+    const image = await createIndexedMedia(folder, 'photo.jpg', 2_750, 'preview');
+    const handler = getRouteHandler('/originals/:id', 'get');
+    const response = createResponse();
+
+    appSettingsRepository.set(LIBRARY_REBUILD_REQUIRED_SETTING_KEY, '1');
+
+    handler(
+      {
+        params: { id: String(image.id) },
+        query: {}
+      } as unknown as express.Request,
+      response as unknown as express.Response,
+      vi.fn()
+    );
+
+    expect(response.status).toHaveBeenCalledWith(404);
+    expect(response.sendFile).not.toHaveBeenCalled();
+    expect(response.download).not.toHaveBeenCalled();
+  });
+
   it('returns 404 when the original file is no longer available on disk', async () => {
     const folder = folderRepository.upsert({ slug: 'album-missing', name: 'Album Missing', folderPath: 'album-missing' });
     const image = await createIndexedMedia(folder, 'missing.jpg', 3_000, 'preview');
@@ -168,18 +259,22 @@ describe.sequential('original media route download behavior', () => {
     filename: string,
     mtimeMs: number,
     playbackStrategy: PlaybackStrategy,
-    durationMs: number | null = null
+    durationMs: number | null = null,
+    options: { storedGalleryRoot?: string } = {}
   ) {
     const relativePath = `${folder.folder_path}/${filename}`;
-    const absolutePath = path.join(appConfig.galleryRoot, relativePath);
+    const sourceAbsolutePath = path.join(appConfig.galleryRoot, relativePath);
+    const absolutePath = options.storedGalleryRoot
+      ? path.join(options.storedGalleryRoot, relativePath)
+      : sourceAbsolutePath;
     const extension = path.extname(filename).toLowerCase();
     const mediaType = getMediaTypeFromExtension(extension);
     const previewRelativePath = getPreviewRelativePath(relativePath, mediaType);
     const thumbnailRelativePath = getThumbnailRelativePath(relativePath);
     const fileSize = 2_048 + mtimeMs;
 
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, `original:${filename}`);
+    await fs.mkdir(path.dirname(sourceAbsolutePath), { recursive: true });
+    await fs.writeFile(sourceAbsolutePath, `original:${filename}`);
 
     return imageRepository.upsert({
       folderId: folder.id,

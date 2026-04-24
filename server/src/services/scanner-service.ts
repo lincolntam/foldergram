@@ -28,6 +28,7 @@ import {
   type DerivativeMigrationProgress,
   type DerivativeMigrationSummary
 } from './derivative-migration-service.js';
+import { libraryRelocationService } from './library-relocation-service.js';
 import { log } from './log-service.js';
 import { placeResolutionService } from './place-service.js';
 import { storageService } from './storage-service.js';
@@ -40,6 +41,7 @@ import {
 } from '../utils/image-utils.js';
 import { generateAssetKey, getPreviewPathForAssetKey, getThumbnailPathForAssetKey } from '../utils/derivative-paths.js';
 import { resolveTakenAt, serializeImageExifData } from '../utils/exif-utils.js';
+import { resolveOriginalPath } from '../utils/media-paths.js';
 import {
   getFolderDisplayInfo,
   getRelativeGalleryPath,
@@ -394,16 +396,33 @@ class ScannerService {
     const requiresDerivativeMigration = pendingDerivativeMigrationRows > 0;
 
     if (galleryRootChanged && normalizedStoredGalleryRoot && hasIndexedFolders) {
-      this.markLibraryRebuildRequired(normalizedStoredGalleryRoot);
-      log.info(
-        joinLogParts([
-          'Startup scan deferred',
-          'rebuild required',
-          formatStep('previous', normalizedStoredGalleryRoot),
-          formatStep('current', currentGalleryRoot)
-        ])
-      );
-      return 'blocked';
+      const relocationValidation = libraryRelocationService.validateCurrentGalleryRoot();
+
+      if (relocationValidation.status === 'validated') {
+        this.clearLibraryRebuildRequirement();
+        appSettingsRepository.set(LAST_SUCCESSFUL_GALLERY_ROOT_SETTING_KEY, currentGalleryRoot);
+        log.info(
+          joinLogParts([
+            'Gallery root relocation validated',
+            formatStep('previous', normalizedStoredGalleryRoot),
+            formatStep('current', currentGalleryRoot),
+            formatStep('checked', relocationValidation.checked),
+            formatStep('refreshed', relocationValidation.refreshed)
+          ])
+        );
+      } else {
+        this.markLibraryRebuildRequired(normalizedStoredGalleryRoot);
+        log.info(
+          joinLogParts([
+            'Startup scan deferred',
+            'rebuild required',
+            formatStep('previous', normalizedStoredGalleryRoot),
+            formatStep('current', currentGalleryRoot),
+            relocationValidation.status === 'failed' ? relocationValidation.reason : null
+          ])
+        );
+        return 'blocked';
+      }
     }
 
     if (!galleryRootChanged || !hasStoredGalleryRoot || !hasIndexedFolders) {
@@ -1390,7 +1409,7 @@ class ScannerService {
           .filter((folderPath): folderPath is string => Boolean(folderPath))
       );
       const derivativeJobs: DerivativeJob[] = indexedImages.map((image) => ({
-        absolutePath: image.absolute_path,
+        absolutePath: resolveOriginalPath(image.relative_path),
         relativePath: image.relative_path,
         thumbnailPath: image.thumbnail_path,
         previewPath: image.preview_path,
@@ -2154,7 +2173,14 @@ class ScannerService {
 
     const missingCandidates: ImageRecord[] = [];
     for (const candidate of candidates) {
-      if (!(await this.pathExists(candidate.absolute_path))) {
+      let candidatePath: string | null = null;
+      try {
+        candidatePath = resolveOriginalPath(candidate.relative_path);
+      } catch {
+        candidatePath = null;
+      }
+
+      if (!candidatePath || !(await this.pathExists(candidatePath))) {
         missingCandidates.push(candidate);
       }
     }

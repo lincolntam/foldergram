@@ -7,6 +7,8 @@ import { appConfig } from '../config/env.js';
 import { imageRepository } from '../db/repositories.js';
 import { log } from '../services/log-service.js';
 import { generateThumbnailDerivative, writeImagePreview, writeVideoPreview } from '../services/derivative-service.js';
+import { scannerService } from '../services/scanner-service.js';
+import { resolveOriginalPath } from '../utils/media-paths.js';
 import { applyDerivativeErrorHeaders, applyProtectedMediaHeaders } from '../utils/media-response.js';
 import { normalizePath, safeJoin } from '../utils/path-utils.js';
 
@@ -102,6 +104,12 @@ async function serveOrGenerate(
     // File does not exist — fall through to generation.
   }
 
+  if (scannerService.isLibraryRebuildRequired()) {
+    applyDerivativeErrorHeaders(response);
+    response.status(409).json({ message: 'Library rebuild required before generating derivatives.' });
+    return;
+  }
+
   // Look up the source row by derivative path.
   const imageRecord =
     kind === 'thumbnail'
@@ -126,8 +134,10 @@ async function serveOrGenerate(
 
     generationPromise = generationLimit(async () => {
       try {
+        const sourcePath = resolveOriginalPath(imageRecord.relative_path);
+
         if (kind === 'thumbnail') {
-          await generateThumbnailDerivative(imageRecord.absolute_path, imageRecord.relative_path, false, {
+          await generateThumbnailDerivative(sourcePath, imageRecord.relative_path, false, {
             thumbnailPath: imageRecord.thumbnail_path
           });
           return;
@@ -139,7 +149,7 @@ async function serveOrGenerate(
             throw new Error('Invalid derivative path.');
           }
 
-          await writeVideoPreview(imageRecord.absolute_path, previewAbsolutePath);
+          await writeVideoPreview(sourcePath, previewAbsolutePath);
           return;
         }
 
@@ -148,7 +158,7 @@ async function serveOrGenerate(
           throw new Error('Invalid derivative path.');
         }
 
-        await writeImagePreview(imageRecord.absolute_path, previewAbsolutePath);
+        await writeImagePreview(sourcePath, previewAbsolutePath);
       } finally {
         inflightGenerations.delete(absoluteOutputPath);
       }
