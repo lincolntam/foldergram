@@ -10,9 +10,11 @@
   >
     <!-- Sidebar: fixed on desktop, hidden on mobile -->
     <SidebarNav class="hidden md:flex fixed top-0 left-0 h-screen z-30" />
+
     <!-- Content: margin-left matches sidebar width on desktop -->
     <div class="app-shell__content flex flex-1 min-h-screen min-w-0 flex-col md:ml-[4.85rem]">
       <TopNav />
+
       <main
         class="app-shell__main flex-1 min-h-0"
         :class="[
@@ -39,12 +41,22 @@
         <div class="grid gap-[0.75rem]">
           <div class="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-start">
             <div class="grid gap-[0.2rem] min-w-0">
-              <strong class="text-[0.96rem] leading-tight tracking-[-0.02em]">{{ stickyScanTitle }}</strong>
-              <p class="m-0 text-[0.84rem] leading-[1.45] text-white/75">{{ stickyScanSummary }}</p>
-              <p v-if="stickyScanActionLine" class="m-0 min-w-0 truncate text-[0.77rem] font-semibold text-[#dbeafe]">
+              <strong class="text-[0.96rem] leading-tight tracking-[-0.02em]">
+                {{ stickyScanTitle }}
+              </strong>
+
+              <p class="m-0 text-[0.84rem] leading-[1.45] text-white/75">
+                {{ stickyScanSummary }}
+              </p>
+
+              <p
+                v-if="stickyScanActionLine"
+                class="m-0 min-w-0 truncate text-[0.77rem] font-semibold text-[#dbeafe]"
+              >
                 {{ stickyScanActionLine }}
               </p>
             </div>
+
             <span
               class="inline-flex items-center justify-center min-h-8 px-[0.72rem] py-[0.34rem] rounded-full text-[0.73rem] font-bold whitespace-nowrap text-[#dbeafe]"
               style="background: rgba(78, 197, 255, 0.16);"
@@ -62,6 +74,7 @@
               v-if="stickyScanBarState.indeterminate"
               class="app-shell__scan-bar app-shell__scan-bar--indeterminate absolute inset-y-0 left-0 w-[38%] rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
             />
+
             <div
               v-else
               class="absolute inset-y-0 left-0 rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
@@ -97,9 +110,11 @@ import {
 
 const appStore = useAppStore();
 const route = useRoute();
+
 const isExploreShell = computed(() => route.meta.shell === 'explore');
 const isReelsShell = computed(() => route.meta.shell === 'reels');
 const isImmersiveShell = computed(() => isExploreShell.value || isReelsShell.value);
+
 const activeScan = computed(() => appStore.stats?.scan ?? null);
 const showStickyScanStatus = computed(() => Boolean(activeScan.value?.isScanning));
 
@@ -125,11 +140,41 @@ const stickyScanBarState = computed(() => getScanBarState(activeScan.value));
 <style scoped>
 .app-shell {
   --mobile-bottom-nav-height: calc(4.1rem + env(safe-area-inset-bottom));
+
+  position: relative;
+
+  background:
+    linear-gradient(
+      rgba(0, 0, 0, 0.48),
+      rgba(0, 0, 0, 0.48)
+    ),
+    url('/bg.jpg');
+
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  z-index: 0;
+}
+
+.app-shell__content,
+.app-shell__scan-status {
+  position: relative;
+  z-index: 1;
 }
 
 .app-shell--reels {
   height: 100dvh;
   min-height: 100dvh;
+  background: #000;
 }
 
 .app-shell--reels .app-shell__content {
